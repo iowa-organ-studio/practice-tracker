@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "68830167607",
+    "project_id": "organ-practice-tracker",
+    "storage_bucket": "organ-practice-tracker.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:68830167607:android:b446b1ebbf3bcde27c75b2",
+        "android_client_info": {
+          "package_name": "edu.uiowa.organpractice"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgo8ERLgdgoF2_9tGq6qpFusNoILkVk08"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
