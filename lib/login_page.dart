@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,6 +14,22 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController controller = TextEditingController();
   String error = "";
   bool loading = false;
+
+  Future<String> getOrCreateDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    String? deviceId = prefs.getString('deviceId');
+
+    if (deviceId != null) {
+      return deviceId;
+    }
+
+    deviceId = const Uuid().v4();
+
+    await prefs.setString('deviceId', deviceId);
+
+    return deviceId;
+  }
 
   Future<void> login() async {
     final uid = controller.text.trim();
@@ -30,11 +47,40 @@ class _LoginPageState extends State<LoginPage> {
           .doc(uid)
           .get();
 
+      final deviceId = await getOrCreateDeviceId();
+
       if (!doc.exists) {
         setState(() {
           error = "UID not found";
           loading = false;
         });
+        return;
+      }
+
+      final data = doc.data()!;
+
+      final activeDeviceId = data['activeDeviceId'];
+
+      final heartbeat = data['lastDeviceHeartbeat'];
+
+      bool otherDeviceActive = false;
+
+      if (activeDeviceId != null &&
+          activeDeviceId != deviceId &&
+          heartbeat != null) {
+        final heartbeatTime = (heartbeat as Timestamp).toDate();
+
+        otherDeviceActive =
+            DateTime.now().difference(heartbeatTime) <
+            const Duration(minutes: 10);
+      }
+
+      if (otherDeviceActive) {
+        setState(() {
+          error = "Account already active on another device";
+          loading = false;
+        });
+
         return;
       }
 
@@ -44,6 +90,10 @@ class _LoginPageState extends State<LoginPage> {
       await prefs.setString('name', doc['name']);
       debugPrint("Saved name: ${doc['name']}");
       await prefs.setString('role', doc['role']);
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'activeDeviceId': deviceId,
+        'lastDeviceHeartbeat': DateTime.now(),
+      });
 
       if (!mounted) return;
 
@@ -63,8 +113,7 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text("Enter University ID",
-                style: TextStyle(fontSize: 18)),
+            const Text("Enter University ID", style: TextStyle(fontSize: 18)),
 
             Padding(
               padding: const EdgeInsets.all(16),

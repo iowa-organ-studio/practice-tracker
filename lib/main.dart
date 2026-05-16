@@ -91,7 +91,39 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  Timer? deviceHeartbeatTimer;
+
+  Future<void> sendDeviceHeartbeat() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final uid = prefs.getString('uid');
+
+    if (uid == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'lastDeviceHeartbeat': DateTime.now(),
+      });
+    } catch (e) {
+      debugPrint("Device heartbeat failed: $e");
+    }
+  }
+
   @override
+  void initState() {
+    super.initState();
+
+    deviceHeartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      sendDeviceHeartbeat();
+    });
+  }
+
+  @override
+  void dispose() {
+    deviceHeartbeatTimer?.cancel();
+    super.dispose();
+  }
+
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -175,6 +207,9 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+//
+// ---------------- SELECTION ----------------
+//
 //
 // ---------------- SELECTION ----------------
 //
@@ -294,6 +329,8 @@ class SelectionPage extends StatelessWidget {
 //
 // ---------------- REVIEW ----------------
 //
+// ---------------- REVIEW ----------------
+//
 
 class ReviewPage extends StatelessWidget {
   const ReviewPage({super.key});
@@ -340,7 +377,13 @@ class ReviewPage extends StatelessWidget {
   String formatHM(int s) {
     final h = s ~/ 3600;
     final m = (s % 3600) ~/ 60;
-    return "$h h $m m";
+    final sec = s % 60;
+
+    if (h > 0) {
+      return "$h h $m m $sec s";
+    }
+
+    return "$m m $sec s";
   }
 
   String formatDuration(int seconds) {
@@ -418,8 +461,10 @@ class ReviewPage extends StatelessWidget {
                         final s = doc.data() as Map<String, dynamic>;
 
                         final rawTimeline = s['timeline'];
+                        final rawWaveform = s['waveform'];
 
                         List<Segment> timelineList = [];
+                        List<WavePoint> waveformList = [];
 
                         if (rawTimeline != null && rawTimeline is List) {
                           timelineList = rawTimeline
@@ -435,6 +480,20 @@ class ReviewPage extends StatelessWidget {
                               .toList();
                         }
 
+                        if (rawWaveform != null && rawWaveform is List) {
+                          waveformList = rawWaveform
+                              .where((e) => e != null)
+                              .map((e) {
+                                final map = e as Map<String, dynamic>;
+
+                                return WavePoint(
+                                  map['second'] ?? 0,
+                                  (map['amplitude'] ?? 0.0).toDouble(),
+                                );
+                              })
+                              .toList();
+                        }
+
                         final duration = s['duration'] ?? 0;
                         final totals = computeTotals(timelineList, duration);
 
@@ -443,12 +502,34 @@ class ReviewPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                "${s['instrument']} — ${formatDuration(duration)}",
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              Builder(
+                                builder: (_) {
+                                  final start = (s['startTime'] as Timestamp)
+                                      .toDate();
+
+                                  int h = start.hour % 12;
+
+                                  if (h == 0) h = 12;
+
+                                  final minute = start.minute
+                                      .toString()
+                                      .padLeft(2, '0');
+
+                                  final suffix = start.hour >= 12 ? "pm" : "am";
+
+                                  final startLabel = "$h:$minute$suffix";
+
+                                  return Text(
+                                    "${s['instrument']} — "
+                                    "${formatDate(start)} — "
+                                    "$startLabel — "
+                                    "${formatDuration(duration)}",
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  );
+                                },
                               ),
 
                               const SizedBox(height: 6),
@@ -479,12 +560,40 @@ class ReviewPage extends StatelessWidget {
                                 ),
                               ),
 
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  "Practice: ${formatHM(totals['practice']!)}     Moving: ${formatHM(totals['moving']!)}",
-                                  style: const TextStyle(fontSize: 12),
+                              if (s['instrument'] == 'Other' &&
+                                  waveformList.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+
+                                SizedBox(
+                                  height: 84,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 2,
+                                            right: 2,
+                                          ),
+                                          child: CustomPaint(
+                                            size: Size.infinite,
+                                            painter: WaveformPainter(
+                                              waveformList,
+                                              duration,
+                                              fixedThreeHourScale: true,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                              ],
+
+                              
+
+                              Text(
+                                "Practice: ${formatHM(totals['practice']!)}     Moving: ${formatHM(totals['moving']!)}",
+                                style: const TextStyle(fontSize: 12),
                               ),
                             ],
                           ),
@@ -892,7 +1001,13 @@ class _PracticePageState extends State<PracticePage> {
   String formatHM(int s) {
     final h = s ~/ 3600;
     final m = (s % 3600) ~/ 60;
-    return "$h h $m m";
+    final sec = s % 60;
+
+    if (h > 0) {
+      return "$h h $m m $sec s";
+    }
+
+    return "$m m $sec s";
   }
 
   String formatDuration(int seconds) {
@@ -1188,6 +1303,14 @@ class _PracticePageState extends State<PracticePage> {
                                       (e) => {
                                         'start': e.start,
                                         'moving': e.moving,
+                                      },
+                                    )
+                                    .toList(),
+                                'waveform': waveform
+                                    .map(
+                                      (e) => {
+                                        'second': e.second,
+                                        'amplitude': e.amplitude,
                                       },
                                     )
                                     .toList(),
