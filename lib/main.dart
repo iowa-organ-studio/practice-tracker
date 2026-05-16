@@ -7,6 +7,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'login_page.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
 
 Future<Widget> getStartPage() async {
   final prefs = await SharedPreferences.getInstance();
@@ -130,7 +132,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             FutureBuilder<Map<String, String>>(
               future: getUserInfo(),
@@ -247,33 +249,71 @@ class SelectionPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: builders.map((b) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: GestureDetector(
-                onTap: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PracticePage(instrument: b),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('sessions')
+            .where('endTime', isNull: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final activeSessions = snapshot.data!.docs;
+
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: builders.map((b) {
+                bool inUse = false;
+
+                if (b != 'Other') {
+                  inUse = activeSessions.any((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return data['instrument'] == b;
+                  });
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: GestureDetector(
+                    onTap: inUse
+                        ? null
+                        : () async {
+                            await Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PracticePage(instrument: b),
+                              ),
+                            );
+                          },
+                    child: Opacity(
+                      opacity: inUse ? 0.4 : 1.0,
+                      child: Container(
+                        width: 220,
+                        padding: const EdgeInsets.all(14),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: inUse ? Colors.grey : gold,
+                          border: Border.all(
+                            color: inUse ? Colors.black54 : Colors.black,
+                            width: 2,
+                          ),
+                        ),
+                        child: Text(
+                          b,
+                          style: TextStyle(
+                            color: inUse ? Colors.black54 : Colors.black,
+                          ),
+                        ),
+                      ),
                     ),
-                  );
-                  Navigator.pop(context, result);
-                },
-                child: Container(
-                  width: 220,
-                  padding: const EdgeInsets.all(14),
-                  alignment: Alignment.center,
-                  color: Colors.grey[700],
-                  child: Text(b, style: const TextStyle(color: gold)),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
+                  ),
+                );
+              }).toList(),
+            ),
+          );
+        },
       ),
     );
   }
@@ -411,9 +451,23 @@ class ReviewPage extends StatelessWidget {
                       children: docs.map((doc) {
                         final s = doc.data() as Map<String, dynamic>;
 
-                        final timelineList = (s['timeline'] as List)
-                            .map((e) => Segment(e['start'], e['moving']))
-                            .toList();
+                        final rawTimeline = s['timeline'];
+
+                        List<Segment> timelineList = [];
+
+                        if (rawTimeline != null && rawTimeline is List) {
+                          timelineList = rawTimeline
+                              .where((e) => e != null)
+                              .map((e) {
+                                final map = e as Map<String, dynamic>;
+
+                                return Segment(
+                                  map['start'] ?? 0,
+                                  map['moving'] ?? false,
+                                );
+                              })
+                              .toList();
+                        }
 
                         final duration = s['duration'] ?? 0;
                         final totals = computeTotals(timelineList, duration);
@@ -434,49 +488,14 @@ class ReviewPage extends StatelessWidget {
                               const SizedBox(height: 6),
 
                               SizedBox(
-                                height: 120,
+                                height: 84,
                                 child: Row(
                                   children: [
-                                    SizedBox(
-                                      width: 70,
-                                      child: LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final h = constraints.maxHeight;
-
-                                          return Stack(
-                                            children: [
-                                              Positioned(
-                                                top: h * 0.15,
-                                                right: 0,
-                                                child: const Text(
-                                                  "moving",
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                              ),
-                                              Positioned(
-                                                top: h * 0.70,
-                                                right: 0,
-                                                child: const Text(
-                                                  "practice",
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
-
-                                    const SizedBox(width: 8),
-
                                     Expanded(
                                       child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
+                                        padding: const EdgeInsets.only(
+                                          left: 2,
+                                          right: 2,
                                         ),
                                         child: CustomPaint(
                                           size: Size.infinite,
@@ -485,6 +504,7 @@ class ReviewPage extends StatelessWidget {
                                             duration,
                                             (s['startTime'] as Timestamp)
                                                 .toDate(),
+                                            fixedThreeHourScale: true,
                                           ),
                                         ),
                                       ),
@@ -530,84 +550,112 @@ class Segment {
   Segment(this.start, this.moving);
 }
 
+class WavePoint {
+  final int second;
+  final double amplitude;
+
+  WavePoint(this.second, this.amplitude);
+}
+
 class GraphPainter extends CustomPainter {
   final List<Segment> timeline;
   final int seconds;
   final DateTime startTime;
 
-  GraphPainter(this.timeline, this.seconds, this.startTime);
+  final bool fixedThreeHourScale;
 
-  static const maxSeconds = 3 * 3600;
+  GraphPainter(
+    this.timeline,
+    this.seconds,
+    this.startTime, {
+    this.fixedThreeHourScale = false,
+  });
 
-  double getX(double s, double width) {
-    const rightPadding = 50.0; // increase this
-    return (s / maxSeconds) * (width - rightPadding);
+  double getVisibleSeconds() {
+    if (fixedThreeHourScale) {
+      return 3 * 3600;
+    }
+
+    if (seconds <= 45 * 60) {
+      return 3600;
+    }
+
+    if (seconds <= 105 * 60) {
+      return 7200;
+    }
+
+    return 10800;
+  }
+
+  double getX(double s, double width, double visibleSeconds) {
+    const graphPadding = 18.0;
+
+    return graphPadding + (s / visibleSeconds) * (width - (graphPadding * 2));
   }
 
   @override
   void paint(Canvas canvas, Size size) {
+    final visibleSeconds = getVisibleSeconds();
+
     final paint = Paint()..style = PaintingStyle.fill;
 
-    final axisPaint = Paint()
-      ..color = Colors.black54
-      ..strokeWidth = 1;
+    final axisPaint = Paint()..strokeWidth = 1;
 
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
 
     final safeTimeline = timeline.isEmpty ? [Segment(0, false)] : timeline;
 
-    final graphTop = 10.0;
-    final graphBottom = size.height - 25; // leave space for labels
+    final graphTop = 6.0;
+    final graphBottom = size.height - 20;
 
-    double getTop(bool moving) =>
-        moving ? graphTop : graphTop + (graphBottom - graphTop) * 0.5;
+    double getTop(bool moving) {
+      return moving ? graphTop : graphTop + (graphBottom - graphTop) * 0.5;
+    }
 
-    // ---------------- DRAW GRID + TICKS ----------------
-    const tickInterval = 15 * 60; // every 15 minutes
+    const tickInterval = 15 * 60;
 
-    for (int t = 0; t <= maxSeconds; t += tickInterval) {
-      final x = getX(t.toDouble(), size.width);
+    for (int t = 0; t <= visibleSeconds; t += tickInterval) {
+      final x = getX(t.toDouble(), size.width, visibleSeconds);
 
-      // vertical grid line
       canvas.drawLine(
         Offset(x, graphTop),
         Offset(x, graphBottom),
         axisPaint..color = Colors.black12,
       );
 
-      // tick
       canvas.drawLine(
         Offset(x, graphBottom),
-        Offset(x, graphBottom + 5),
+        Offset(x, graphBottom + 4),
         axisPaint..color = Colors.black54,
       );
 
-      // label every hour
       if (t % 3600 == 0) {
         final time = startTime.add(Duration(seconds: t));
 
         int h = time.hour % 12;
+
         if (h == 0) h = 12;
+
         final m = time.minute.toString().padLeft(2, '0');
+
         final suffix = time.hour >= 12 ? "pm" : "am";
 
         final label = "$h:$m$suffix";
 
         textPainter.text = TextSpan(
           text: label,
-          style: const TextStyle(fontSize: 10, color: Colors.black),
+          style: const TextStyle(fontSize: 9, color: Colors.black),
         );
 
         textPainter.layout();
 
         textPainter.paint(
           canvas,
-          Offset(x - textPainter.width / 2, graphBottom + 6),
+          Offset(x - textPainter.width / 2, graphBottom + 3),
         );
       }
     }
 
-    // ---------------- DRAW BARS ----------------
     for (int i = 0; i < safeTimeline.length; i++) {
       final seg = safeTimeline[i];
 
@@ -615,27 +663,89 @@ class GraphPainter extends CustomPainter {
           ? safeTimeline[i + 1].start
           : seconds;
 
-      double x1 = getX(seg.start.toDouble(), size.width);
-      double x2 = getX(end.toDouble(), size.width);
+      double x1 = getX(seg.start.toDouble(), size.width, visibleSeconds);
 
-      if (x2 - x1 < 2) x2 = x1 + 2;
+      double x2 = getX(end.toDouble(), size.width, visibleSeconds);
+
+      if (x2 - x1 < 2) {
+        x2 = x1 + 2;
+      }
+
+      if (seg.moving && (x2 - x1) > 3) {
+        x2 = x1 + 3;
+      }
 
       final rect = Rect.fromLTRB(x1, getTop(seg.moving), x2, graphBottom);
 
       paint.color = seg.moving ? gold : Colors.green;
+
       canvas.drawRect(rect, paint);
     }
 
-    // ---------------- BORDER ----------------
-    const rightPadding = 50.0;
-
     canvas.drawRect(
-      Rect.fromLTRB(0, graphTop, size.width - rightPadding, graphBottom),
+      Rect.fromLTRB(18, graphTop, size.width - 18, graphBottom),
       Paint()
         ..style = PaintingStyle.stroke
         ..color = Colors.black,
     );
-  } // ✅ THIS CLOSES paint()
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class WaveformPainter extends CustomPainter {
+  final List<WavePoint> waveform;
+  final int seconds;
+
+  WaveformPainter(this.waveform, this.seconds);
+
+  static const maxSeconds = 3 * 3600;
+
+  double getX(double s, double width) {
+    const rightPadding = 20.0;
+    return (s / maxSeconds) * (width - rightPadding);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = gold
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke;
+
+    final centerY = size.height / 2;
+
+    // border
+    canvas.drawRect(
+      Rect.fromLTRB(0, 0, size.width - 20, size.height),
+      borderPaint,
+    );
+
+    if (waveform.isEmpty) return;
+
+    for (int i = 0; i < waveform.length; i++) {
+      final point = waveform[i];
+
+      final x = getX(point.second.toDouble(), size.width);
+
+      final ampHeight = point.amplitude * (size.height * 0.45);
+
+      const barWidth = 4.0;
+
+      final rect = Rect.fromLTRB(
+        x,
+        centerY - ampHeight,
+        x + barWidth,
+        centerY + ampHeight,
+      );
+
+      canvas.drawRect(rect, paint);
+    }
+  }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
@@ -667,14 +777,23 @@ class _PracticePageState extends State<PracticePage> {
   late Timer timer;
   int seconds = 0;
 
-  late DateTime startTime;
+  DateTime? startTime;
 
   List<Segment> timeline = [Segment(0, false)];
   bool isMoving = false;
 
+  List<WavePoint> waveform = [];
+
+  final AudioRecorder recorder = AudioRecorder();
+
+  Timer? amplitudeTimer;
+
+  double currentAmplitude = 0;
+
   String uid = "";
   String name = "";
   String role = "";
+  String? sessionId;
 
   String formatClockTime(DateTime t) {
     int h = t.hour % 12;
@@ -700,6 +819,31 @@ class _PracticePageState extends State<PracticePage> {
       name = prefs.getString('name') ?? "";
       role = prefs.getString('role') ?? "";
     });
+  }
+
+  Future<void> createSession() async {
+    final doc = await FirebaseFirestore.instance.collection('sessions').add({
+      'uid': uid,
+      'name': name,
+      'instrument': widget.instrument,
+      'startTime': startTime,
+      'endTime': null,
+      'status': 'normal',
+    });
+
+    sessionId = doc.id;
+  }
+
+  Future<void> initializePractice() async {
+    await loadUser();
+
+    startTime = DateTime.now();
+
+    await createSession();
+
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   String formatDate(DateTime d) {
@@ -753,15 +897,57 @@ class _PracticePageState extends State<PracticePage> {
     return {'practice': practice, 'moving': moving};
   }
 
+  Future<void> initializeWaveform() async {
+    if (widget.instrument != 'Other') return;
+
+    try {
+      final hasPermission = await recorder.hasPermission();
+
+      if (!hasPermission) {
+        debugPrint("Microphone permission denied");
+        return;
+      }
+
+      final dir = await getTemporaryDirectory();
+
+      final path = '${dir.path}/temp_recording.m4a';
+
+      await recorder.start(const RecordConfig(), path: path);
+
+      amplitudeTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+        try {
+          final amp = await recorder.getAmplitude();
+
+          if (!mounted) return;
+
+          double normalized = (amp.current + 60) / 60;
+
+          normalized = normalized.clamp(0.0, 1.0);
+
+          setState(() {
+            currentAmplitude = (currentAmplitude * 0.7) + (normalized * 0.3);
+
+            waveform.add(WavePoint(seconds, currentAmplitude));
+          });
+        } catch (e) {
+          debugPrint("Amplitude read error: $e");
+        }
+      });
+    } catch (e) {
+      debugPrint("Waveform init error: $e");
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
-    loadUser(); // ✅ load UID once
-
-    startTime = DateTime.now();
+    initializePractice();
+    initializeWaveform();
 
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+
       setState(() {
         seconds++;
       });
@@ -786,11 +972,22 @@ class _PracticePageState extends State<PracticePage> {
   @override
   void dispose() {
     timer.cancel();
+
+    amplitudeTimer?.cancel();
+
+    recorder.stop();
+
+    recorder.dispose();
+
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (startTime == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(automaticallyImplyLeading: false, title: const Text("")),
       body: SafeArea(
@@ -844,7 +1041,7 @@ class _PracticePageState extends State<PracticePage> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
-                          "${formatDate(startTime)} --- ${widget.instrument}",
+                          "${formatDate(startTime!)} --- ${widget.instrument}",
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -856,50 +1053,18 @@ class _PracticePageState extends State<PracticePage> {
                     const SizedBox(height: 10),
 
                     SizedBox(
-                      height: 120,
+                      height: 84,
                       child: Row(
                         children: [
-                          SizedBox(
-                            width: 70,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final h = constraints.maxHeight;
-
-                                return Stack(
-                                  children: [
-                                    Positioned(
-                                      top: h * 0.25,
-                                      right: 0,
-                                      child: const Text(
-                                        "moving",
-                                        style: TextStyle(fontSize: 10),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: h * 0.75,
-                                      right: 0,
-                                      child: const Text(
-                                        "practice",
-                                        style: TextStyle(fontSize: 10),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
+                              padding: const EdgeInsets.only(left: 2, right: 2),
                               child: CustomPaint(
                                 size: Size.infinite,
                                 painter: GraphPainter(
                                   timeline,
                                   seconds,
-                                  startTime,
+                                  startTime!,
                                 ),
                               ),
                             ),
@@ -908,7 +1073,36 @@ class _PracticePageState extends State<PracticePage> {
                       ),
                     ),
 
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(width: 10, height: 10, color: Colors.green),
+
+                        const SizedBox(width: 4),
+
+                        const Text("practice", style: TextStyle(fontSize: 11)),
+
+                        const SizedBox(width: 14),
+
+                        Container(width: 10, height: 10, color: gold),
+
+                        const SizedBox(width: 4),
+
+                        const Text("moving", style: TextStyle(fontSize: 11)),
+
+                        const SizedBox(width: 14),
+
+                        Container(width: 10, height: 10, color: Colors.red),
+
+                        const SizedBox(width: 4),
+
+                        const Text("flagged", style: TextStyle(fontSize: 11)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
 
                     Text(
                       "Practice: ${formatHM(computeTotals()['practice']!)}     Moving: ${formatHM(computeTotals()['moving']!)}",
@@ -929,14 +1123,11 @@ class _PracticePageState extends State<PracticePage> {
                       ),
                       onPressed: () async {
                         timer.cancel();
-
                         try {
                           await FirebaseFirestore.instance
                               .collection('sessions')
-                              .add({
-                                'uid': uid,
-                                'name': name,
-                                'instrument': widget.instrument,
+                              .doc(sessionId)
+                              .update({
                                 'duration': seconds,
                                 'timeline': timeline
                                     .map(
@@ -946,14 +1137,11 @@ class _PracticePageState extends State<PracticePage> {
                                       },
                                     )
                                     .toList(),
-                                'startTime': startTime,
                                 'endTime': DateTime.now(),
-                                'status': 'normal',
                               });
                         } catch (e) {
-                          debugPrint("Error saving session: $e");
+                          debugPrint("Error updating session: $e");
                         }
-
                         Navigator.pop(context, {
                           'duration': seconds,
                           'timeline': timeline
