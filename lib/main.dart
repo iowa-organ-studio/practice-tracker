@@ -278,16 +278,50 @@ class SelectionPage extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: GestureDetector(
-                    onTap: inUse
-                        ? null
-                        : () async {
-                            await Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PracticePage(instrument: b),
+                    onTap: () async {
+                      if (inUse) {
+                        final result = await showDialog<bool>(
+                          context: context,
+                          builder: (_) {
+                            return AlertDialog(
+                              title: const Text("Organ In Use"),
+                              content: const Text(
+                                "This organ appears to be in use.\n\nStart session anyway?",
                               ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(context, false);
+                                  },
+                                  child: const Text("No"),
+                                ),
+
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(context, true);
+                                  },
+                                  child: const Text("Yes"),
+                                ),
+                              ],
                             );
                           },
+                        );
+
+                        if (result != true) {
+                          return;
+                        }
+                      }
+
+                      await Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PracticePage(
+                            instrument: b,
+                            initiatedOverlap: inUse,
+                          ),
+                        ),
+                      );
+                    },
                     child: Opacity(
                       opacity: inUse ? 0.4 : 1.0,
                       child: Container(
@@ -295,17 +329,16 @@ class SelectionPage extends StatelessWidget {
                         padding: const EdgeInsets.all(14),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: inUse ? Colors.grey : gold,
-                          border: Border.all(
-                            color: inUse ? Colors.black54 : Colors.black,
-                            width: 2,
-                          ),
+                          color: b == 'Other'
+                              ? const Color(0xFFFFE680)
+                              : inUse
+                              ? Colors.grey
+                              : gold,
+                          border: Border.all(color: Colors.black, width: 2),
                         ),
                         child: Text(
                           inUse ? "$b (in use)" : b,
-                          style: TextStyle(
-                            color: inUse ? Colors.black54 : Colors.black,
-                          ),
+                          style: TextStyle(color: Colors.black),
                         ),
                       ),
                     ),
@@ -475,6 +508,7 @@ class ReviewPage extends StatelessWidget {
                                 return Segment(
                                   map['start'] ?? 0,
                                   map['moving'] ?? false,
+                                  flagged: map['flagged'] ?? false,
                                 );
                               })
                               .toList();
@@ -589,8 +623,6 @@ class ReviewPage extends StatelessWidget {
                                 ),
                               ],
 
-                              
-
                               Text(
                                 "Practice: ${formatHM(totals['practice']!)}     Moving: ${formatHM(totals['moving']!)}",
                                 style: const TextStyle(fontSize: 12),
@@ -621,8 +653,9 @@ class ReviewPage extends StatelessWidget {
 class Segment {
   final int start;
   final bool moving;
+  final bool flagged;
 
-  Segment(this.start, this.moving);
+  Segment(this.start, this.moving, {this.flagged = false});
 }
 
 class WavePoint {
@@ -752,7 +785,11 @@ class GraphPainter extends CustomPainter {
 
       final rect = Rect.fromLTRB(x1, getTop(seg.moving), x2, graphBottom);
 
-      paint.color = seg.moving ? gold : Colors.green;
+      paint.color = seg.moving
+          ? gold
+          : seg.flagged
+          ? Colors.red
+          : Colors.green;
 
       canvas.drawRect(rect, paint);
     }
@@ -885,8 +922,13 @@ class WaveformPainter extends CustomPainter {
 
 class PracticePage extends StatefulWidget {
   final String instrument;
+  final bool initiatedOverlap;
 
-  const PracticePage({super.key, required this.instrument});
+  const PracticePage({
+    super.key,
+    required this.instrument,
+    this.initiatedOverlap = false,
+  });
 
   @override
   State<PracticePage> createState() => _PracticePageState();
@@ -895,12 +937,15 @@ class PracticePage extends StatefulWidget {
 class _PracticePageState extends State<PracticePage> {
   late Timer timer;
   Timer? heartbeatTimer;
+  StreamSubscription? overlapSubscription;
   int seconds = 0;
 
   DateTime? startTime;
 
-  List<Segment> timeline = [Segment(0, false)];
+  List<Segment> timeline = [];
   bool isMoving = false;
+  bool isFlagged = false;
+  bool initiatedOverlap = false;
 
   List<WavePoint> waveform = [];
 
@@ -950,9 +995,107 @@ class _PracticePageState extends State<PracticePage> {
       'endTime': null,
       'status': 'normal',
       'lastHeartbeat': DateTime.now(),
+
+      'timeline': timeline
+          .map(
+            (e) => {'start': e.start, 'moving': e.moving, 'flagged': e.flagged},
+          )
+          .toList(),
     });
 
     sessionId = doc.id;
+  }
+
+  Future<void> syncTimeline() async {
+    if (sessionId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(sessionId)
+          .update({
+            'timeline': timeline
+                .map(
+                  (e) => {
+                    'start': e.start,
+                    'moving': e.moving,
+                    'flagged': e.flagged,
+                  },
+                )
+                .toList(),
+          });
+    } catch (e) {
+      debugPrint("Timeline sync failed: $e");
+    }
+  }
+
+  Future<void> startOverlapWatcher() async {
+    overlapSubscription = FirebaseFirestore.instance
+        .collection('sessions')
+        .where('instrument', isEqualTo: widget.instrument)
+        .where('endTime', isNull: true)
+        .snapshots()
+        .listen((snapshot) {
+          bool overlapNow = snapshot.docs.any((doc) {
+            return doc.id != sessionId;
+          });
+
+          if (overlapNow != isFlagged) {
+            setState(() {
+              isFlagged = overlapNow;
+
+              timeline.add(
+                Segment(seconds, isMoving, flagged: overlapNow && !isMoving),
+              );
+            });
+
+            syncTimeline();
+
+            if (isFlagged && !initiatedOverlap) {
+              showOverlapDialog();
+            }
+          }
+        });
+  }
+
+  void showOverlapDialog() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text("Organ Conflict"),
+          content: const Text(
+            "Someone else has started a practice session on this organ.\n\nDo you wish to continue practicing?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+
+                if (!mounted) return;
+
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+                );
+              },
+              child: const Text("No"),
+            ),
+
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text("Yes"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> sendHeartbeat() async {
@@ -972,9 +1115,11 @@ class _PracticePageState extends State<PracticePage> {
     await loadUser();
 
     startTime = DateTime.now();
+    initiatedOverlap = widget.initiatedOverlap;
+    timeline = [Segment(0, false, flagged: false)];
 
     await createSession();
-
+    await startOverlapWatcher();
     if (mounted) {
       setState(() {});
     }
@@ -1086,6 +1231,7 @@ class _PracticePageState extends State<PracticePage> {
     initializeWaveform();
     heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       sendHeartbeat();
+      syncTimeline();
     });
 
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1106,7 +1252,10 @@ class _PracticePageState extends State<PracticePage> {
       if (movingNow != isMoving) {
         setState(() {
           isMoving = movingNow;
-          timeline.add(Segment(seconds, isMoving));
+          timeline.add(
+            Segment(seconds, movingNow, flagged: isFlagged && !movingNow),
+          );
+          syncTimeline();
         });
       }
     });
@@ -1119,6 +1268,8 @@ class _PracticePageState extends State<PracticePage> {
     amplitudeTimer?.cancel();
 
     heartbeatTimer?.cancel();
+
+    overlapSubscription?.cancel();
 
     recorder.stop();
 
@@ -1303,6 +1454,7 @@ class _PracticePageState extends State<PracticePage> {
                                       (e) => {
                                         'start': e.start,
                                         'moving': e.moving,
+                                        'flagged': e.flagged,
                                       },
                                     )
                                     .toList(),
@@ -1338,7 +1490,7 @@ class _PracticePageState extends State<PracticePage> {
               padding: const EdgeInsets.only(top: 8, bottom: 10),
               child: SvgPicture.asset(
                 'assets/Organ-Studio-LockupStacked-RGB.svg',
-                height: 55,
+                height: 101
               ),
             ),
           ],
