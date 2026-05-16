@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sensors_plus/sensors_plus.dart';
@@ -92,41 +91,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Map<String, dynamic>> sessions = [];
-
-  @override
-  void initState() {
-    super.initState();
-    loadSessions();
-  }
-
-  Future<void> loadSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    final data = prefs.getString('sessions');
-
-    if (data != null) {
-      setState(() {
-        sessions = List<Map<String, dynamic>>.from(jsonDecode(data));
-      });
-    }
-  }
-
-  Future<void> clearOldSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('sessions');
-  }
-
-  Future<void> saveSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('sessions', jsonEncode(sessions));
-  }
-
-  String formatTime(int s) {
-    final h = s ~/ 3600;
-    final m = (s % 3600) ~/ 60;
-    return "$h h $m m";
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -181,24 +145,12 @@ class _HomePageState extends State<HomePage> {
               ),
               child: const Text("Start Practice"),
               onPressed: () async {
-                final result = await Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const SelectionPage(),
                   ),
                 );
-
-                if (result != null) {
-                  sessions.add({
-                    'duration': result['duration'],
-                    'timeline': result['timeline'],
-                    'date': DateTime.now().toIso8601String(),
-                    'instrument': result['instrument'],
-                  });
-
-                  await saveSessions();
-                  setState(() {});
-                }
               },
             ),
 
@@ -259,7 +211,21 @@ class SelectionPage extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final activeSessions = snapshot.data!.docs;
+          final now = DateTime.now();
+
+          final activeSessions = snapshot.data!.docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+
+            final heartbeat = data['lastHeartbeat'];
+
+            if (heartbeat == null) {
+              return true;
+            }
+
+            final heartbeatTime = (heartbeat as Timestamp).toDate();
+
+            return now.difference(heartbeatTime) < const Duration(minutes: 5);
+          }).toList();
 
           return Center(
             child: Column(
@@ -301,7 +267,7 @@ class SelectionPage extends StatelessWidget {
                           ),
                         ),
                         child: Text(
-                          b,
+                          inUse ? "$b (in use)" : b,
                           style: TextStyle(
                             color: inUse ? Colors.black54 : Colors.black,
                           ),
@@ -698,52 +664,96 @@ class WaveformPainter extends CustomPainter {
   final List<WavePoint> waveform;
   final int seconds;
 
-  WaveformPainter(this.waveform, this.seconds);
+  final bool fixedThreeHourScale;
 
-  static const maxSeconds = 3 * 3600;
+  WaveformPainter(
+    this.waveform,
+    this.seconds, {
+    this.fixedThreeHourScale = false,
+  });
 
-  double getX(double s, double width) {
-    const rightPadding = 20.0;
-    return (s / maxSeconds) * (width - rightPadding);
+  double getVisibleSeconds() {
+    if (fixedThreeHourScale) {
+      return 3 * 3600;
+    }
+
+    if (seconds <= 45 * 60) {
+      return 3600;
+    }
+
+    if (seconds <= 105 * 60) {
+      return 7200;
+    }
+
+    return 10800;
+  }
+
+  double getX(double s, double width, double visibleSeconds) {
+    const graphPadding = 18.0;
+
+    return graphPadding + (s / visibleSeconds) * (width - (graphPadding * 2));
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = gold
+    final visibleSeconds = getVisibleSeconds();
+
+    final waveformPaint = Paint()
+      ..color = Colors.black
       ..style = PaintingStyle.fill;
 
     final borderPaint = Paint()
       ..color = Colors.black
       ..style = PaintingStyle.stroke;
 
+    final gridPaint = Paint()
+      ..color = Colors.black12
+      ..strokeWidth = 1;
+
     final centerY = size.height / 2;
+
+    final graphTop = 6.0;
+    final graphBottom = size.height - 6;
+
+    // vertical grid lines
+    const tickInterval = 15 * 60;
+
+    for (int t = 0; t <= visibleSeconds; t += tickInterval) {
+      final x = getX(t.toDouble(), size.width, visibleSeconds);
+
+      canvas.drawLine(Offset(x, graphTop), Offset(x, graphBottom), gridPaint);
+    }
 
     // border
     canvas.drawRect(
-      Rect.fromLTRB(0, 0, size.width - 20, size.height),
+      Rect.fromLTRB(18, graphTop, size.width - 18, graphBottom),
+      borderPaint,
+    );
+
+    // center line
+    canvas.drawLine(
+      Offset(18, centerY),
+      Offset(size.width - 18, centerY),
       borderPaint,
     );
 
     if (waveform.isEmpty) return;
 
-    for (int i = 0; i < waveform.length; i++) {
-      final point = waveform[i];
+    for (final point in waveform) {
+      final x = getX(point.second.toDouble(), size.width, visibleSeconds);
 
-      final x = getX(point.second.toDouble(), size.width);
+      final ampHeight = point.amplitude * ((graphBottom - graphTop) * 0.42);
 
-      final ampHeight = point.amplitude * (size.height * 0.45);
-
-      const barWidth = 4.0;
+      const sliceWidth = 1.5;
 
       final rect = Rect.fromLTRB(
         x,
         centerY - ampHeight,
-        x + barWidth,
+        x + sliceWidth,
         centerY + ampHeight,
       );
 
-      canvas.drawRect(rect, paint);
+      canvas.drawRect(rect, waveformPaint);
     }
   }
 
@@ -775,6 +785,7 @@ class PracticePage extends StatefulWidget {
 
 class _PracticePageState extends State<PracticePage> {
   late Timer timer;
+  Timer? heartbeatTimer;
   int seconds = 0;
 
   DateTime? startTime;
@@ -829,9 +840,23 @@ class _PracticePageState extends State<PracticePage> {
       'startTime': startTime,
       'endTime': null,
       'status': 'normal',
+      'lastHeartbeat': DateTime.now(),
     });
 
     sessionId = doc.id;
+  }
+
+  Future<void> sendHeartbeat() async {
+    if (sessionId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(sessionId)
+          .update({'lastHeartbeat': DateTime.now()});
+    } catch (e) {
+      debugPrint("Heartbeat update failed: $e");
+    }
   }
 
   Future<void> initializePractice() async {
@@ -944,6 +969,9 @@ class _PracticePageState extends State<PracticePage> {
 
     initializePractice();
     initializeWaveform();
+    heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      sendHeartbeat();
+    });
 
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -953,7 +981,7 @@ class _PracticePageState extends State<PracticePage> {
       });
     });
 
-    accelerometerEvents.listen((event) {
+    accelerometerEventStream().listen((event) {
       if (!mounted) return;
 
       double mag = (event.x * event.x + event.y * event.y + event.z * event.z);
@@ -974,6 +1002,8 @@ class _PracticePageState extends State<PracticePage> {
     timer.cancel();
 
     amplitudeTimer?.cancel();
+
+    heartbeatTimer?.cancel();
 
     recorder.stop();
 
@@ -1102,6 +1132,30 @@ class _PracticePageState extends State<PracticePage> {
                       ],
                     ),
 
+                    if (widget.instrument == 'Other') ...[
+                      const SizedBox(height: 10),
+
+                      SizedBox(
+                        height: 84,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  left: 2,
+                                  right: 2,
+                                ),
+                                child: CustomPaint(
+                                  size: Size.infinite,
+                                  painter: WaveformPainter(waveform, seconds),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 8),
 
                     Text(
@@ -1142,15 +1196,13 @@ class _PracticePageState extends State<PracticePage> {
                         } catch (e) {
                           debugPrint("Error updating session: $e");
                         }
-                        Navigator.pop(context, {
-                          'duration': seconds,
-                          'timeline': timeline
-                              .map(
-                                (e) => {'start': e.start, 'moving': e.moving},
-                              )
-                              .toList(),
-                          'instrument': widget.instrument,
-                        });
+                        if (!mounted) return;
+
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (_) => const HomePage()),
+                          (route) => false,
+                        );
                       },
                       child: const Text("Stop Practice"),
                     ),
@@ -1160,7 +1212,7 @@ class _PracticePageState extends State<PracticePage> {
             ),
             // LOGO BOTTOM
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.only(top: 8, bottom: 10),
               child: SvgPicture.asset(
                 'assets/Organ-Studio-LockupStacked-RGB.svg',
                 height: 55,
