@@ -505,121 +505,77 @@ class _PracticePageState extends State<PracticePage>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            // TOP CONTENT
-            // TOP CONTENT
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    FutureBuilder<Map<String, String>>(
-                      future: getUserInfo(),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) return const SizedBox();
+    return PopScope(
+      canPop: false,
 
-                        final user = snapshot.data!;
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
 
-                        return Container(
-                          width: double.infinity,
-                          color: Colors.black,
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                user['name'] ?? '',
-                                style: const TextStyle(
-                                  color: gold,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Practice session is active. Press "Stop Practice" to return to app home screen.',
+            ),
+
+            duration: Duration(seconds: 2),
+          ),
+        );
+      },
+
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              // TOP CONTENT
+              // TOP CONTENT
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      FutureBuilder<Map<String, String>>(
+                        future: getUserInfo(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) return const SizedBox();
+
+                          final user = snapshot.data!;
+
+                          return Container(
+                            width: double.infinity,
+                            color: Colors.black,
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  user['name'] ?? '',
+                                  style: const TextStyle(
+                                    color: gold,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
 
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 20),
 
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          "${formatDate(startTime!)} --- ${widget.instrument}",
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            "${formatDate(startTime!)} --- ${widget.instrument}",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: 10),
-
-                    SizedBox(
-                      height: 84,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 2, right: 2),
-                              child: CustomPaint(
-                                size: Size.infinite,
-                                painter: GraphPainter(
-                                  timeline,
-                                  seconds,
-                                  startTime!,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(width: 10, height: 10, color: Colors.green),
-
-                        const SizedBox(width: 4),
-
-                        const Text("practice", style: TextStyle(fontSize: 11)),
-
-                        const SizedBox(width: 14),
-
-                        Container(width: 10, height: 10, color: gold),
-
-                        const SizedBox(width: 4),
-
-                        const Text("moving", style: TextStyle(fontSize: 11)),
-
-                        const SizedBox(width: 14),
-
-                        Container(width: 10, height: 10, color: Colors.red),
-
-                        const SizedBox(width: 4),
-
-                        const Text("flagged", style: TextStyle(fontSize: 11)),
-
-                        const SizedBox(width: 14),
-
-                        Container(width: 10, height: 10, color: Colors.grey),
-
-                        const SizedBox(width: 4),
-
-                        const Text("paused", style: TextStyle(fontSize: 11)),
-                      ],
-                    ),
-
-                    if (widget.instrument == 'Other') ...[
                       const SizedBox(height: 10),
 
                       SizedBox(
@@ -634,162 +590,230 @@ class _PracticePageState extends State<PracticePage>
                                 ),
                                 child: CustomPaint(
                                   size: Size.infinite,
-                                  painter: WaveformPainter(waveform, seconds),
+                                  painter: GraphPainter(
+                                    timeline,
+                                    seconds,
+                                    startTime!,
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
 
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 8),
 
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(width: 10, height: 10, color: Colors.green),
 
-                      children: [
-                        Container(width: 10, height: 10, color: Colors.green),
+                          const SizedBox(width: 4),
 
-                        const SizedBox(width: 4),
+                          const Text(
+                            "practice",
+                            style: TextStyle(fontSize: 11),
+                          ),
 
-                        Text(
-                          formatHM(computeTotals()['practice']!),
+                          const SizedBox(width: 14),
 
-                          style: const TextStyle(fontSize: 14),
-                        ),
+                          Container(width: 10, height: 10, color: gold),
 
-                        const SizedBox(width: 16),
+                          const SizedBox(width: 4),
 
-                        Container(width: 10, height: 10, color: gold),
+                          const Text("moving", style: TextStyle(fontSize: 11)),
 
-                        const SizedBox(width: 4),
+                          const SizedBox(width: 14),
 
-                        Text(
-                          formatHM(computeTotals()['moving']!),
+                          Container(width: 10, height: 10, color: Colors.red),
 
-                          style: const TextStyle(fontSize: 14),
-                        ),
+                          const SizedBox(width: 4),
 
-                        const SizedBox(width: 16),
+                          const Text("flagged", style: TextStyle(fontSize: 11)),
 
-                        Container(width: 10, height: 10, color: Colors.red),
+                          const SizedBox(width: 14),
 
-                        const SizedBox(width: 4),
+                          Container(width: 10, height: 10, color: Colors.grey),
 
-                        Text(
-                          formatHM(computeTotals()['flagged']!),
+                          const SizedBox(width: 4),
 
-                          style: const TextStyle(fontSize: 14),
-                        ),
+                          const Text("paused", style: TextStyle(fontSize: 11)),
+                        ],
+                      ),
 
-                        const SizedBox(width: 16),
+                      if (widget.instrument == 'Other') ...[
+                        const SizedBox(height: 10),
 
-                        Container(width: 10, height: 10, color: Colors.grey),
-
-                        const SizedBox(width: 4),
-
-                        Text(
-                          formatHM(computeTotals()['paused']!),
-
-                          style: const TextStyle(fontSize: 14),
+                        SizedBox(
+                          height: 84,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 2,
+                                    right: 2,
+                                  ),
+                                  child: CustomPaint(
+                                    size: Size.infinite,
+                                    painter: WaveformPainter(waveform, seconds),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
-                    ),
 
-                    const SizedBox(height: 10),
+                      const SizedBox(height: 8),
 
-                    Text(
-                      formatClock(seconds),
-                      style: const TextStyle(fontSize: 28),
-                    ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
 
-                    if (isSavingSession) ...[
+                        children: [
+                          Container(width: 10, height: 10, color: Colors.green),
+
+                          const SizedBox(width: 4),
+
+                          Text(
+                            formatHM(computeTotals()['practice']!),
+
+                            style: const TextStyle(fontSize: 14),
+                          ),
+
+                          const SizedBox(width: 16),
+
+                          Container(width: 10, height: 10, color: gold),
+
+                          const SizedBox(width: 4),
+
+                          Text(
+                            formatHM(computeTotals()['moving']!),
+
+                            style: const TextStyle(fontSize: 14),
+                          ),
+
+                          const SizedBox(width: 16),
+
+                          Container(width: 10, height: 10, color: Colors.red),
+
+                          const SizedBox(width: 4),
+
+                          Text(
+                            formatHM(computeTotals()['flagged']!),
+
+                            style: const TextStyle(fontSize: 14),
+                          ),
+
+                          const SizedBox(width: 16),
+
+                          Container(width: 10, height: 10, color: Colors.grey),
+
+                          const SizedBox(width: 4),
+
+                          Text(
+                            formatHM(computeTotals()['paused']!),
+
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ],
+                      ),
+
                       const SizedBox(height: 10),
 
-                      const Text(
-                        "Saving session...",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      Text(
+                        formatClock(seconds),
+                        style: const TextStyle(fontSize: 28),
+                      ),
+
+                      if (isSavingSession) ...[
+                        const SizedBox(height: 10),
+
+                        const Text(
+                          "Saving session...",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
+
+                        const SizedBox(height: 4),
+
+                        const Text(
+                          "Waiting for internet connection...",
+                          style: TextStyle(fontSize: 13, color: Colors.grey),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        const CircularProgressIndicator(),
+                      ],
+
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: gold,
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: () async {
+                          timer.cancel();
+
+                          setState(() {
+                            isSavingSession = true;
+                          });
+                          try {
+                            await FirebaseFirestore.instance
+                                .collection('sessions')
+                                .doc(sessionId)
+                                .update({
+                                  'duration': seconds,
+                                  'timeline': timeline
+                                      .map(
+                                        (e) => {
+                                          'start': e.start,
+                                          'moving': e.moving,
+                                          'flagged': e.flagged,
+                                          'paused': e.paused,
+                                        },
+                                      )
+                                      .toList(),
+                                  'waveform': waveform
+                                      .map(
+                                        (e) => {
+                                          'second': e.second,
+                                          'amplitude': e.amplitude,
+                                        },
+                                      )
+                                      .toList(),
+                                  'endTime': DateTime.now(),
+                                });
+                          } catch (e) {
+                            debugPrint("Error updating session: $e");
+                          }
+                          if (!mounted) return;
+
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => const HomePage()),
+                            (route) => false,
+                          );
+                        },
+                        child: const Text("Stop Practice"),
                       ),
-
-                      const SizedBox(height: 4),
-
-                      const Text(
-                        "Waiting for internet connection...",
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      const CircularProgressIndicator(),
                     ],
-
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: gold,
-                        foregroundColor: Colors.black,
-                      ),
-                      onPressed: () async {
-                        timer.cancel();
-
-                        setState(() {
-                          isSavingSession = true;
-                        });
-                        try {
-                          await FirebaseFirestore.instance
-                              .collection('sessions')
-                              .doc(sessionId)
-                              .update({
-                                'duration': seconds,
-                                'timeline': timeline
-                                    .map(
-                                      (e) => {
-                                        'start': e.start,
-                                        'moving': e.moving,
-                                        'flagged': e.flagged,
-                                        'paused': e.paused,
-                                      },
-                                    )
-                                    .toList(),
-                                'waveform': waveform
-                                    .map(
-                                      (e) => {
-                                        'second': e.second,
-                                        'amplitude': e.amplitude,
-                                      },
-                                    )
-                                    .toList(),
-                                'endTime': DateTime.now(),
-                              });
-                        } catch (e) {
-                          debugPrint("Error updating session: $e");
-                        }
-                        if (!mounted) return;
-
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(builder: (_) => const HomePage()),
-                          (route) => false,
-                        );
-                      },
-                      child: const Text("Stop Practice"),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-            // LOGO BOTTOM
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 10),
-              child: SvgPicture.asset(
-                'assets/Organ-Studio-LockupStacked-RGB.svg',
-                height: 70,
+              // LOGO BOTTOM
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 10),
+                child: SvgPicture.asset(
+                  'assets/Organ-Studio-LockupStacked-RGB.svg',
+                  height: 70,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

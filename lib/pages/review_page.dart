@@ -14,7 +14,9 @@ import '../theme/app_colors.dart';
 import '../services/semester_service.dart';
 
 class ReviewPage extends StatelessWidget {
-  const ReviewPage({super.key});
+  final String? overrideUid;
+
+  const ReviewPage({super.key, this.overrideUid});
 
   String formatDate(DateTime d) {
     const months = [
@@ -67,21 +69,31 @@ class ReviewPage extends StatelessWidget {
   }
 
   String formatHM(int s) {
-    final h = s ~/ 3600;
-    final m = (s % 3600) ~/ 60;
-    final sec = s % 60;
+    final roundedMinutes = (s / 60).round();
+
+    final h = roundedMinutes ~/ 60;
+
+    final m = roundedMinutes % 60;
 
     if (h > 0) {
-      return "$h h $m m $sec s";
+      return "$h h $m m";
     }
 
-    return "$m m $sec s";
+    return "$m m";
   }
 
   String formatDuration(int seconds) {
-    final m = (seconds ~/ 60);
-    final s = (seconds % 60).toString().padLeft(2, '0');
-    return "$m:$s";
+    final roundedMinutes = (seconds / 60).round();
+
+    final h = roundedMinutes ~/ 60;
+
+    final m = roundedMinutes % 60;
+
+    if (h > 0) {
+      return "$h h $m m";
+    }
+
+    return "$m m";
   }
 
   String getWeekLabel(DateTime date) {
@@ -92,6 +104,26 @@ class ReviewPage extends StatelessWidget {
     final week = (days ~/ 7) + 1;
 
     return "Week $week";
+  }
+
+  int computeWeekTotal(List<QueryDocumentSnapshot> docs, String weekLabel) {
+    int total = 0;
+
+    for (final doc in docs) {
+      final data = doc.data() as Map<String, dynamic>;
+
+      final start = (data['startTime'] as Timestamp).toDate();
+
+      final label = getWeekLabel(start);
+
+      if (label == weekLabel) {
+        final duration = data['duration'] ?? 0;
+
+        total += duration as int;
+      }
+    }
+
+    return total;
   }
 
   @override
@@ -105,7 +137,7 @@ class ReviewPage extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final currentUid = uidSnapshot.data!;
+          final currentUid = overrideUid ?? uidSnapshot.data!;
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -122,12 +154,16 @@ class ReviewPage extends StatelessWidget {
 
               return Column(
                 children: [
-                  FutureBuilder<Map<String, String>>(
-                    future: getUserInfo(),
+                  FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(overrideUid ?? uidSnapshot.data!)
+                        .get(),
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) return const SizedBox();
 
-                      final user = snapshot.data!;
+                      final user =
+                          snapshot.data!.data() as Map<String, dynamic>;
 
                       return Container(
                         width: double.infinity,
@@ -235,15 +271,45 @@ class ReviewPage extends StatelessWidget {
                                   return const SizedBox();
                                 }
 
-                                return Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 12,
-                                    top: 18,
-                                    bottom: 6,
+                                final weekTotal = computeWeekTotal(
+                                  docs,
+                                  currentWeek,
+                                );
+
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+
+                                    border: Border.all(
+                                      color: Colors.black,
+                                      width: 2,
+                                    ),
+
+                                    borderRadius: BorderRadius.circular(10),
+
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Colors.black12,
+                                        blurRadius: 3,
+                                        offset: Offset(1, 2),
+                                      ),
+                                    ],
                                   ),
 
                                   child: Text(
-                                    currentWeek,
+                                    "$currentWeek — "
+                                    "Total practice: "
+                                    "${formatHM(weekTotal)}",
 
                                     style: const TextStyle(
                                       fontSize: 18,

@@ -15,6 +15,7 @@ import '../theme/app_colors.dart';
 import '../services/semester_service.dart';
 import '../models/week_status.dart';
 import '../widgets/semester_card.dart';
+import '../widgets/harmony_progress_card.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -29,12 +30,18 @@ class _HomePageState extends State<HomePage> {
 
   List<WeekStatus> semesterStatuses = [];
 
+  String semesterTitle = "Semester";
+
   Future<void> loadSemesterStatuses() async {
     final semester = await getActiveSemester();
 
     if (semester == null) {
       return;
     }
+
+    setState(() {
+      semesterTitle = "${semester.name} Practice";
+    });
 
     final uid = await getUid();
 
@@ -181,26 +188,41 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
 
-                              Text(
-                                "Weekly Minimum: "
-                                "${minimumWeeklyMinutes ~/ 60} h",
+                              RichText(
+                                text: TextSpan(
+                                  children: [
+                                    const TextSpan(
+                                      text: "Weekly Minimum: ",
 
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+
+                                    TextSpan(
+                                      text: "${minimumWeeklyMinutes ~/ 60} h",
+
+                                      style: const TextStyle(
+                                        color: gold,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
 
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 2),
 
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
 
                             children: const [
                               Text(
-                                "This week\n total",
+                                "This week total",
 
                                 textAlign: TextAlign.center,
 
@@ -211,7 +233,7 @@ class _HomePageState extends State<HomePage> {
                               ),
 
                               Text(
-                                "This week\n daily avg",
+                                "This week avg",
 
                                 textAlign: TextAlign.center,
 
@@ -222,7 +244,7 @@ class _HomePageState extends State<HomePage> {
                               ),
 
                               Text(
-                                "Semester\n daily avg",
+                                "Semester avg",
 
                                 textAlign: TextAlign.center,
 
@@ -234,7 +256,7 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
 
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 2),
 
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -279,49 +301,72 @@ class _HomePageState extends State<HomePage> {
               },
             ),
 
-            const SizedBox(height: 24),
-
-            const Text(
-              "Hawkeye Organist Practice App",
-              style: TextStyle(fontSize: 22),
-            ),
-
             if (semesterStatuses.isNotEmpty)
-              SemesterCard(title: "Summer 2026", statuses: semesterStatuses),
+              SemesterCard(title: semesterTitle, statuses: semesterStatuses),
+
+            const SizedBox(height: 8),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+
+              children: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+
+                    foregroundColor: gold,
+                  ),
+
+                  child: const Text("Start Practice"),
+
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+
+                      MaterialPageRoute(
+                        builder: (context) => const SelectionPage(),
+                      ),
+                    );
+                  },
+                ),
+
+                const SizedBox(width: 18),
+
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: gold,
+
+                    foregroundColor: Colors.black,
+                  ),
+
+                  child: const Text("Review Sessions"),
+
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+
+                      MaterialPageRoute(
+                        builder: (context) => const ReviewPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
 
             const SizedBox(height: 24),
 
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: gold,
-                foregroundColor: Colors.black,
+            const HarmonyProgressCard(),
+
+            const SizedBox(height: 10),
+
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+
+              child: SvgPicture.asset(
+                'assets/Organ-Studio-LockupStacked-RGB.svg',
+                height: 105,
               ),
-              child: const Text("Start Practice"),
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SelectionPage(),
-                  ),
-                );
-              },
-            ),
-
-            ElevatedButton(
-              child: const Text("Review Sessions"),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ReviewPage()),
-                );
-              },
-            ),
-
-            const Spacer(),
-
-            SvgPicture.asset(
-              'assets/Organ-Studio-LockupStacked-RGB.svg',
-              height: 135,
             ),
           ],
         ),

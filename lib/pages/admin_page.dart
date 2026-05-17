@@ -6,6 +6,8 @@ import '../widgets/admin_header.dart';
 
 import 'occupancy_page.dart';
 
+import 'last_week_overview_page.dart';
+
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
 
@@ -26,7 +28,17 @@ class AdminPage extends StatelessWidget {
                 minimumSize: const Size(260, 50),
               ),
 
-              onPressed: () {},
+              onPressed: () {
+                debugPrint("LAST WEEK BUTTON PRESSED");
+
+                Navigator.push(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) => const LastWeekOverviewPage(),
+                  ),
+                );
+              },
 
               child: const Text("Last Week Overview"),
             ),

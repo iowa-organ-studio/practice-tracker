@@ -54,10 +54,6 @@ class GraphPainter extends CustomPainter {
     final graphTop = 6.0;
     final graphBottom = size.height - 20;
 
-    double getTop(bool moving) {
-      return moving ? graphTop : graphTop + (graphBottom - graphTop) * 0.5;
-    }
-
     const tickInterval = 15 * 60;
 
     for (int t = 0; t <= visibleSeconds; t += tickInterval) {
@@ -121,7 +117,15 @@ class GraphPainter extends CustomPainter {
         x2 = x1 + 3;
       }
 
-      final rect = Rect.fromLTRB(x1, getTop(seg.moving), x2, graphBottom);
+      final laneMid = graphTop + (graphBottom - graphTop) * 0.5;
+
+      final isUpperLane = seg.moving || seg.paused;
+
+      final top = isUpperLane ? graphTop : laneMid;
+
+      final bottom = isUpperLane ? laneMid : graphBottom;
+
+      final rect = Rect.fromLTRB(x1, top, x2, bottom);
 
       paint.color = seg.paused
           ? Colors.grey

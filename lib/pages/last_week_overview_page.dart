@@ -1,0 +1,212 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../widgets/admin_header.dart';
+
+import 'review_page.dart';
+import '../services/semester_service.dart';
+
+class LastWeekOverviewPage extends StatelessWidget {
+  const LastWeekOverviewPage({super.key});
+
+  int yearRank(String year) {
+    switch (year) {
+      case '4':
+        return 4;
+      case '3':
+        return 3;
+      case '2':
+        return 2;
+      case '1':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  Future<Color> getLastWeekColor(String uid, int minimumMinutes) async {
+    final semester = await getActiveSemester();
+
+    if (semester == null) {
+      return Colors.grey;
+    }
+
+    final now = DateTime.now();
+
+    int currentWeekIndex = -1;
+
+    for (int i = 0; i < semester.weeks.length; i++) {
+      final week = semester.weeks[i];
+
+      if (now.isAfter(week.start) && now.isBefore(week.end)) {
+        currentWeekIndex = i;
+        break;
+      }
+    }
+
+    // still in week 1
+    if (currentWeekIndex <= 0) {
+      return Colors.grey;
+    }
+
+    final previousWeek = semester.weeks[currentWeekIndex - 1];
+
+    if (previousWeek.offWeek) {
+      return Colors.black;
+    }
+
+    final minutes = await getPracticeMinutesForWeek(
+      uid: uid,
+      week: previousWeek,
+    );
+
+    if (minutes >= minimumMinutes) {
+      return Colors.green;
+    }
+
+    return Colors.red;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            const AdminHeader(title: "ADMIN"),
+
+            const SizedBox(height: 16),
+
+            const Text(
+              "Week 1 Overview",
+
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .where('role', isEqualTo: 'student')
+                    .snapshots(),
+
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final docs = List<QueryDocumentSnapshot>.from(
+                    snapshot.data!.docs,
+                  );
+
+                  docs.sort((a, b) {
+                    final ad = a.data() as Map<String, dynamic>;
+
+                    final bd = b.data() as Map<String, dynamic>;
+
+                    final ay = yearRank(ad['year'] ?? '');
+
+                    final by = yearRank(bd['year'] ?? '');
+
+                    if (ay != by) {
+                      return by.compareTo(ay);
+                    }
+
+                    final an = ad['name'] ?? '';
+
+                    final bn = bd['name'] ?? '';
+
+                    return an.compareTo(bn);
+                  });
+
+                  return ListView(
+                    children: docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+
+                      return Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
+
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+
+                          border: Border.all(color: Colors.black, width: 2),
+
+                          borderRadius: BorderRadius.circular(10),
+
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black12,
+                              blurRadius: 3,
+                              offset: Offset(1, 2),
+                            ),
+                          ],
+                        ),
+
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ReviewPage(overrideUid: doc.id),
+                                    ),
+                                  );
+                                },
+
+                                child: Text(
+                                  data['name'] ?? 'Unknown',
+
+                                  style: const TextStyle(fontSize: 18),
+                                ),
+                              ),
+                            ),
+
+                            FutureBuilder<Color>(
+                              future: getLastWeekColor(
+                                doc.id,
+                                data['minWeeklyMinutes'] ?? 0,
+                              ),
+
+                              builder: (context, colorSnapshot) {
+                                final ledColor =
+                                    colorSnapshot.data ?? Colors.grey;
+
+                                return Container(
+                                  width: 18,
+
+                                  height: 18,
+
+                                  decoration: BoxDecoration(
+                                    color: ledColor,
+
+                                    shape: BoxShape.circle,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

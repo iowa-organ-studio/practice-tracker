@@ -58,7 +58,7 @@ class SemesterCard extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(height: 4),
 
             Row(
               mainAxisAlignment:
