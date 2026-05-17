@@ -29,7 +29,8 @@ class PracticePage extends StatefulWidget {
   State<PracticePage> createState() => _PracticePageState();
 }
 
-class _PracticePageState extends State<PracticePage> {
+class _PracticePageState extends State<PracticePage>
+    with WidgetsBindingObserver {
   late Timer timer;
   Timer? heartbeatTimer;
   StreamSubscription? overlapSubscription;
@@ -43,7 +44,12 @@ class _PracticePageState extends State<PracticePage> {
   DateTime? stillStartTime;
   bool isFlagged = false;
   bool initiatedOverlap = false;
+
   bool isSavingSession = false;
+
+  bool isPaused = false;
+
+  DateTime? pausedStartTime;
 
   List<WavePoint> waveform = [];
 
@@ -96,7 +102,12 @@ class _PracticePageState extends State<PracticePage> {
 
       'timeline': timeline
           .map(
-            (e) => {'start': e.start, 'moving': e.moving, 'flagged': e.flagged},
+            (e) => {
+              'start': e.start,
+              'moving': e.moving,
+              'flagged': e.flagged,
+              'paused': e.paused,
+            },
           )
           .toList(),
     });
@@ -118,6 +129,7 @@ class _PracticePageState extends State<PracticePage> {
                     'start': e.start,
                     'moving': e.moving,
                     'flagged': e.flagged,
+                    'paused': e.paused,
                   },
                 )
                 .toList(),
@@ -289,6 +301,7 @@ class _PracticePageState extends State<PracticePage> {
     int practice = 0;
     int moving = 0;
     int flagged = 0;
+    int paused = 0;
 
     for (int i = 0; i < timeline.length; i++) {
       final current = timeline[i];
@@ -297,7 +310,9 @@ class _PracticePageState extends State<PracticePage> {
 
       int duration = end - current.start;
 
-      if (current.moving) {
+      if (current.paused) {
+        paused += duration;
+      } else if (current.moving) {
         moving += duration;
       } else if (current.flagged) {
         flagged += duration;
@@ -306,7 +321,12 @@ class _PracticePageState extends State<PracticePage> {
       }
     }
 
-    return {'practice': practice, 'moving': moving, 'flagged': flagged};
+    return {
+      'practice': practice,
+      'moving': moving,
+      'flagged': flagged,
+      'paused': paused,
+    };
   }
 
   Future<void> initializeWaveform() async {
@@ -354,6 +374,8 @@ class _PracticePageState extends State<PracticePage> {
   void initState() {
     super.initState();
 
+    WidgetsBinding.instance.addObserver(this);
+
     WakelockPlus.enable();
 
     initializePractice();
@@ -366,10 +388,15 @@ class _PracticePageState extends State<PracticePage> {
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
 
+      if (isPaused) {
+        return;
+      }
+
       setState(() {
         seconds++;
       });
     });
+
     accelerometerEventStream().listen((event) {
       if (!mounted) return;
 
@@ -414,6 +441,8 @@ class _PracticePageState extends State<PracticePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+
     timer.cancel();
     WakelockPlus.disable();
     amplitudeTimer?.cancel();
@@ -427,6 +456,47 @@ class _PracticePageState extends State<PracticePage> {
     recorder.dispose();
 
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+
+    if (state == AppLifecycleState.paused) {
+      pausedStartTime = DateTime.now();
+
+      setState(() {
+        isPaused = true;
+
+        timeline.add(Segment(seconds, false, paused: true));
+      });
+
+      syncTimeline();
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      if (pausedStartTime != null) {
+        final pausedDuration = DateTime.now()
+            .difference(pausedStartTime!)
+            .inSeconds;
+
+        final resumedSecond = seconds + pausedDuration;
+
+        setState(() {
+          seconds = resumedSecond;
+
+          isPaused = false;
+
+          timeline.add(
+            Segment(resumedSecond, isMoving, flagged: isFlagged && !isMoving),
+          );
+        });
+
+        pausedStartTime = null;
+
+        syncTimeline();
+      }
+    }
   }
 
   @override
@@ -538,6 +608,14 @@ class _PracticePageState extends State<PracticePage> {
                         const SizedBox(width: 4),
 
                         const Text("flagged", style: TextStyle(fontSize: 11)),
+
+                        const SizedBox(width: 14),
+
+                        Container(width: 10, height: 10, color: Colors.grey),
+
+                        const SizedBox(width: 4),
+
+                        const Text("paused", style: TextStyle(fontSize: 11)),
                       ],
                     ),
 
@@ -604,6 +682,18 @@ class _PracticePageState extends State<PracticePage> {
 
                           style: const TextStyle(fontSize: 14),
                         ),
+
+                        const SizedBox(width: 16),
+
+                        Container(width: 10, height: 10, color: Colors.grey),
+
+                        const SizedBox(width: 4),
+
+                        Text(
+                          formatHM(computeTotals()['paused']!),
+
+                          style: const TextStyle(fontSize: 14),
+                        ),
                       ],
                     ),
 
@@ -660,6 +750,7 @@ class _PracticePageState extends State<PracticePage> {
                                         'start': e.start,
                                         'moving': e.moving,
                                         'flagged': e.flagged,
+                                        'paused': e.paused,
                                       },
                                     )
                                     .toList(),

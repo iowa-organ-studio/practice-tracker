@@ -123,7 +123,9 @@ class GraphPainter extends CustomPainter {
 
       final rect = Rect.fromLTRB(x1, getTop(seg.moving), x2, graphBottom);
 
-      paint.color = seg.moving
+      paint.color = seg.paused
+          ? Colors.grey
+          : seg.moving
           ? gold
           : seg.flagged
           ? Colors.red

@@ -38,6 +38,7 @@ class ReviewPage extends StatelessWidget {
     int practice = 0;
     int moving = 0;
     int flagged = 0;
+    int paused = 0;
 
     for (int i = 0; i < timeline.length; i++) {
       final current = timeline[i];
@@ -46,7 +47,9 @@ class ReviewPage extends StatelessWidget {
 
       int duration = end - current.start;
 
-      if (current.moving) {
+      if (current.paused) {
+        paused += duration;
+      } else if (current.moving) {
         moving += duration;
       } else if (current.flagged) {
         flagged += duration;
@@ -55,7 +58,12 @@ class ReviewPage extends StatelessWidget {
       }
     }
 
-    return {'practice': practice, 'moving': moving, 'flagged': flagged};
+    return {
+      'practice': practice,
+      'moving': moving,
+      'flagged': flagged,
+      'paused': paused,
+    };
   }
 
   String formatHM(int s) {
@@ -162,7 +170,10 @@ class ReviewPage extends StatelessWidget {
                                 return Segment(
                                   map['start'] ?? 0,
                                   map['moving'] ?? false,
+
                                   flagged: map['flagged'] ?? false,
+
+                                  paused: map['paused'] ?? false,
                                 );
                               })
                               .toList();
@@ -338,12 +349,72 @@ class ReviewPage extends StatelessWidget {
                                     ),
                                   ],
 
-                                  Text(
-                                    "Practice: ${formatHM(totals['practice']!)}"
-                                    "     Moving: ${formatHM(totals['moving']!)}"
-                                    "     Flagged: ${formatHM(totals['flagged']!)}",
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
 
-                                    style: const TextStyle(fontSize: 12),
+                                    children: [
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        color: Colors.green,
+                                      ),
+
+                                      const SizedBox(width: 4),
+
+                                      Text(
+                                        formatHM(totals['practice']!),
+
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+
+                                      const SizedBox(width: 14),
+
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        color: gold,
+                                      ),
+
+                                      const SizedBox(width: 4),
+
+                                      Text(
+                                        formatHM(totals['moving']!),
+
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+
+                                      const SizedBox(width: 14),
+
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        color: Colors.red,
+                                      ),
+
+                                      const SizedBox(width: 4),
+
+                                      Text(
+                                        formatHM(totals['flagged']!),
+
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+
+                                      const SizedBox(width: 14),
+
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        color: Colors.grey,
+                                      ),
+
+                                      const SizedBox(width: 4),
+
+                                      Text(
+                                        formatHM(totals['paused']!),
+
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
