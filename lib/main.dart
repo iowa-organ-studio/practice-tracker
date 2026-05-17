@@ -8,6 +8,8 @@ import 'pages/home_page.dart';
 
 import 'theme/app_colors.dart';
 
+import 'pages/admin_page.dart';
+
 Future<Widget> getStartPage() async {
   final prefs = await SharedPreferences.getInstance();
   final uid = prefs.getString('uid');

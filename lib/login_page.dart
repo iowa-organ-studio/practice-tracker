@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'pages/admin_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -89,7 +90,7 @@ class _LoginPageState extends State<LoginPage> {
       await prefs.setString('uid', uid);
       await prefs.setString('name', doc['name']);
       debugPrint("Saved name: ${doc['name']}");
-      await prefs.setString('role', doc['role']);
+      await prefs.setString('role', data['role'] ?? 'student');
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
         'activeDeviceId': deviceId,
         'lastDeviceHeartbeat': DateTime.now(),
@@ -97,7 +98,15 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
-      Navigator.pushReplacementNamed(context, '/home');
+      if ((data['role'] ?? 'student') == 'admin') {
+        Navigator.pushReplacement(
+          context,
+
+          MaterialPageRoute(builder: (_) => const AdminPage()),
+        );
+      } else {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
     } catch (e) {
       setState(() {
         error = "Error connecting to server";
