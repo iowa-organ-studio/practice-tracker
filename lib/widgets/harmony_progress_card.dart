@@ -1,52 +1,80 @@
 import 'package:flutter/material.dart';
+import '../data/harmony_competencies.dart';
+import '../models/harmony_competency.dart';
+import '../models/harmony_state.dart';
+
+import '../models/harmony_wedge.dart';
+import '../pages/harmony_progress_page.dart';
 
 class HarmonyProgressCard extends StatelessWidget {
   const HarmonyProgressCard({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
 
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          MaterialPageRoute(builder: (_) => const HarmonyProgressPage()),
+        );
+      },
 
-      child: Padding(
-        padding: const EdgeInsets.all(10),
+      child: Card(
+        elevation: 3,
 
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
 
-          children: [
-            const Text(
-              "Harmony Progress",
+        child: Padding(
+          padding: const EdgeInsets.all(10),
 
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
 
-            const SizedBox(height: 8),
+            children: [
+              const Text(
+                "Harmony Progress",
 
-            Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
 
-                  children: List.generate(9, (index) {
-                    return const HarmonyWheel(number: 12);
-                  }),
-                ),
+              const SizedBox(height: 8),
 
-                const SizedBox(height: 6),
+              Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: List.generate(9, (index) {
+                      final competency = harmonyCompetencies[index];
 
-                  children: List.generate(9, (index) {
-                    return const HarmonyWheel(number: 12);
-                  }),
-                ),
-              ],
-            ),
-          ],
+                      return HarmonyWheel(
+                        competency: competency,
+
+                        number: index + 1,
+                      );
+                    }),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+
+                    children: List.generate(9, (index) {
+                      final competency = harmonyCompetencies[index + 9];
+
+                      return HarmonyWheel(
+                        competency: competency,
+
+                        number: index + 10,
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -54,38 +82,36 @@ class HarmonyProgressCard extends StatelessWidget {
 }
 
 class HarmonyWheel extends StatelessWidget {
+  final HarmonyCompetency competency;
+
   final int number;
 
-  const HarmonyWheel({super.key, required this.number});
+  const HarmonyWheel({
+    super.key,
+    required this.competency,
+    required this.number,
+  });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 24,
-      height: 24,
+      width: 30,
+      height: 44,
 
-      child: Stack(
-        alignment: Alignment.center,
-
+      child: Column(
         children: [
-          CustomPaint(size: const Size(24, 24), painter: HarmonyWheelPainter()),
+          Text(
+            "$number",
 
-          Container(
-            width: 11,
-            height: 11,
+            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold),
+          ),
 
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
+          const SizedBox(height: 2),
 
-            alignment: Alignment.center,
+          CustomPaint(
+            size: const Size(30, 30),
 
-            child: Text(
-              "$number",
-
-              style: const TextStyle(fontSize: 6, fontWeight: FontWeight.bold),
-            ),
+            painter: HarmonyWheelPainter(competency: competency),
           ),
         ],
       ),
@@ -94,36 +120,73 @@ class HarmonyWheel extends StatelessWidget {
 }
 
 class HarmonyWheelPainter extends CustomPainter {
+  final HarmonyCompetency competency;
+
+  HarmonyWheelPainter({required this.competency});
   @override
   void paint(Canvas canvas, Size size) {
-    final colors = [
-      Colors.black,
-      Color(0xFFD4AF37),
-      Colors.grey,
-      Colors.black,
-      Color(0xFFD4AF37),
-      Colors.grey,
-      Colors.black,
-      Color(0xFFD4AF37),
-    ];
-
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
 
+    final wedges = HarmonyWedge.values;
+
     for (int i = 0; i < 8; i++) {
-      final paint = Paint()..color = colors[i];
+      final wedge = wedges[i];
+
+      final state = competency.wedges[wedge]!;
+
+      Color color;
+
+      switch (state) {
+        case HarmonyState.incomplete:
+          color = Colors.grey;
+          break;
+
+        case HarmonyState.complete:
+          color = Colors.black;
+          break;
+
+        case HarmonyState.embellished:
+          color = const Color(0xFFD4AF37);
+          break;
+      }
+
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.fill;
 
       canvas.drawArc(
         rect,
         (i * 45) * 3.1415926535 / 180,
+
         45 * 3.1415926535 / 180,
+
         true,
         paint,
+      );
+
+      final outlinePaint = Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.7;
+
+      canvas.drawArc(
+        rect,
+        (i * 45) * 3.1415926535 / 180,
+
+        45 * 3.1415926535 / 180,
+
+        true,
+        outlinePaint,
       );
     }
 
     final centerPaint = Paint()..color = Colors.white;
 
-    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 7, centerPaint);
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height / 2),
+      3.5,
+      centerPaint,
+    );
   }
 
   @override
