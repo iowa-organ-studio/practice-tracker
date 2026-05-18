@@ -92,6 +92,37 @@ class _HomePageState extends State<HomePage> {
     return await getPracticeMinutesForWeek(uid: uid, week: currentWeek);
   }
 
+  Future<int> getSemesterDailyAverage() async {
+    final semester = await getActiveSemester();
+
+    if (semester == null) return 0;
+
+    final uid = await getUid();
+
+    final now = DateTime.now();
+
+    int totalSemesterMinutes = 0;
+
+    for (final week in semester.weeks) {
+      if (now.isAfter(week.start)) {
+        totalSemesterMinutes += await getPracticeMinutesForWeek(
+          uid: uid,
+          week: week,
+        );
+      }
+    }
+
+    final today = DateTime(now.year, now.month, now.day);
+
+    final semesterStart = semester.weeks.first.start;
+
+    final elapsedDays = today.difference(semesterStart).inDays;
+
+    final safeDays = elapsedDays <= 0 ? 1 : elapsedDays;
+
+    return (totalSemesterMinutes / safeDays).round();
+  }
+
   String formatHM(int minutes) {
     final h = minutes ~/ 60;
 
@@ -160,8 +191,6 @@ class _HomePageState extends State<HomePage> {
 
                     final weekDailyAverage = (weekMinutes / elapsedWeekDays)
                         .round();
-
-                    final semesterDailyAverage = weekDailyAverage;
 
                     return Container(
                       width: double.infinity,
@@ -233,7 +262,7 @@ class _HomePageState extends State<HomePage> {
                               ),
 
                               Text(
-                                "This week avg",
+                                "This week daily avg",
 
                                 textAlign: TextAlign.center,
 
@@ -244,7 +273,7 @@ class _HomePageState extends State<HomePage> {
                               ),
 
                               Text(
-                                "Semester avg",
+                                "Semester daily avg",
 
                                 textAlign: TextAlign.center,
 
@@ -282,14 +311,23 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
 
-                              Text(
-                                formatHM(semesterDailyAverage),
+                              FutureBuilder<int>(
+                                future: getSemesterDailyAverage(),
 
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                builder: (context, semesterSnapshot) {
+                                  final semesterAverage =
+                                      semesterSnapshot.data ?? 0;
+
+                                  return Text(
+                                    formatHM(semesterAverage),
+
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),

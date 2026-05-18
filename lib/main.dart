@@ -15,6 +15,12 @@ Future<Widget> getStartPage() async {
   final uid = prefs.getString('uid');
 
   if (uid != null) {
+    final role = prefs.getString('role');
+
+    if (role == 'admin') {
+      return const AdminPage();
+    }
+
     return const HomePage();
   } else {
     return const LoginPage();
@@ -30,8 +36,6 @@ void main() async {
   runApp(MyApp(startPage));
 }
 
-
-
 class MyApp extends StatelessWidget {
   final Widget startPage;
 
@@ -42,8 +46,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: startPage,
-      routes: {'/home': (context) => const HomePage()},
+      // (deleted 5-18 to solve admin login issue // routes: {'/home': (context) => const HomePage()},
     );
   }
 }
-

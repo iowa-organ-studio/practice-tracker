@@ -67,14 +67,11 @@ WeekStatus computeWeekStatus({
 
 Future<int> getPracticeMinutesForWeek({
   required String uid,
-
   required SemesterWeek week,
 }) async {
   final snapshot = await FirebaseFirestore.instance
       .collection('sessions')
       .where('uid', isEqualTo: uid)
-      .where('startTime', isGreaterThanOrEqualTo: week.start)
-      .where('startTime', isLessThanOrEqualTo: week.end)
       .get();
 
   int totalSeconds = 0;
@@ -82,8 +79,44 @@ Future<int> getPracticeMinutesForWeek({
   for (final doc in snapshot.docs) {
     final data = doc.data();
 
-    totalSeconds += (data['duration'] ?? 0) as int;
+    final startTime = (data['startTime'] as Timestamp).toDate();
+
+    if (startTime.isBefore(week.start) || startTime.isAfter(week.end)) {
+      continue;
+    }
+
+    final rawTimeline = data['timeline'];
+
+    if (rawTimeline == null || rawTimeline is! List || rawTimeline.isEmpty) {
+      continue;
+    }
+
+    final duration = data['duration'] ?? 0;
+
+    for (int i = 0; i < rawTimeline.length; i++) {
+      final current = rawTimeline[i] as Map<String, dynamic>;
+
+      final currentStart = current['start'] ?? 0;
+
+      final nextStart = i < rawTimeline.length - 1
+          ? rawTimeline[i + 1]['start'] ?? duration
+          : duration;
+
+      final int segmentDuration = (nextStart as int) - (currentStart as int);
+
+      final moving = current['moving'] == true;
+
+      final flagged = current['flagged'] == true;
+
+      final paused = current['paused'] == true;
+
+      final countsAsPractice = !moving && !flagged && !paused;
+
+      if (countsAsPractice) {
+        totalSeconds += segmentDuration;
+      }
+    }
   }
 
-  return totalSeconds ~/ 60;
+  return (totalSeconds / 60).round();
 }

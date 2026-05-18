@@ -72,12 +72,12 @@ harmonyCompetencies = [
 
   HarmonyCompetency.empty(
     id:
-        'boyvin_double_suspensions',
+        'boyvin_dissonant_bass',
 
     title:
-        'Boyvin double suspensions',
+        'Boyvin dissonant bass note',
 
-    centerIcon: '9-8\n7-6',
+    centerIcon: '2',
   ),
 
   HarmonyCompetency.empty(

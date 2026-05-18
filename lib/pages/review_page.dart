@@ -117,9 +117,30 @@ class ReviewPage extends StatelessWidget {
       final label = getWeekLabel(start);
 
       if (label == weekLabel) {
+        final rawTimeline = data['timeline'];
+
+        List<Segment> timelineList = [];
+
+        if (rawTimeline != null && rawTimeline is List) {
+          timelineList = rawTimeline.where((e) => e != null).map((e) {
+            final map = e as Map<String, dynamic>;
+
+            return Segment(
+              map['start'] ?? 0,
+              map['moving'] ?? false,
+              flagged: map['flagged'] ?? false,
+              paused: map['paused'] ?? false,
+            );
+          }).toList();
+        }
+
         final duration = data['duration'] ?? 0;
 
-        total += duration as int;
+        final totals = computeTotals(timelineList, duration);
+
+        final practiceDuration = totals['practice'] ?? 0;
+
+        total += totals['practice']!;
       }
     }
 
@@ -230,7 +251,10 @@ class ReviewPage extends StatelessWidget {
                         }
 
                         final duration = s['duration'] ?? 0;
+
                         final totals = computeTotals(timelineList, duration);
+
+                        final practiceDuration = totals['practice'] ?? 0;
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,7 +373,7 @@ class ReviewPage extends StatelessWidget {
                                         "${s['instrument']} — "
                                         "${formatDate(start)} — "
                                         "$startLabel — "
-                                        "${formatDuration(duration)}",
+                                        "${formatDuration(practiceDuration)}",
                                         style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.bold,
