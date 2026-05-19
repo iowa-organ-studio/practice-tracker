@@ -318,8 +318,41 @@ class _PracticePageState extends State<PracticePage>
               onPressed: () async {
                 Navigator.pop(context);
 
+                // ✅ stop timers
+                timer.cancel();
+                heartbeatTimer?.cancel();
+                amplitudeTimer?.cancel();
+
+                // ✅ finalize session in Firestore
+                try {
+                  if (sessionId != null) {
+                    await FirebaseFirestore.instance
+                        .collection('sessions')
+                        .doc(sessionId)
+                        .update({
+                          'duration': seconds,
+                          'timeline': timeline
+                              .map(
+                                (e) => {
+                                  'start': e.start,
+                                  'moving': e.moving,
+                                  'flagged': e.flagged,
+                                  'paused': e.paused,
+                                  'resolved': e.resolved,
+                                  'fraudulent': e.fraudulent,
+                                },
+                              )
+                              .toList(),
+                          'endTime': DateTime.now(),
+                        });
+                  }
+                } catch (e) {
+                  debugPrint("Error ending session from conflict dialog: $e");
+                }
+
                 if (!mounted) return;
 
+                // ✅ go home
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (_) => const HomePage()),
