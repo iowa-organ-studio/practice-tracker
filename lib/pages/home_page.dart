@@ -16,6 +16,7 @@ import '../services/semester_service.dart';
 import '../models/week_status.dart';
 import '../widgets/semester_card.dart';
 import '../widgets/harmony_progress_card.dart';
+import 'dart:convert';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -29,9 +30,9 @@ class _HomePageState extends State<HomePage> {
   int minimumWeeklyMinutes = 0;
 
   List<WeekStatus> semesterStatuses = [];
-
+  static const pendingStopKey = 'pending_stop_upload';
   String semesterTitle = "Semester";
-
+  bool uploadPending = false;
   Future<void> loadSemesterStatuses() async {
     final semester = await getActiveSemester();
 
@@ -147,12 +148,53 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> retryPendingUpload() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final raw = prefs.getString(pendingStopKey);
+
+    if (raw == null) {
+      return;
+    }
+
+    setState(() {
+      uploadPending = true;
+    });
+
+    try {
+      final pending = Map<String, dynamic>.from(jsonDecode(raw));
+
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(pending['sessionId'])
+          .update({
+            'duration': pending['duration'],
+
+            'timeline': pending['timeline'],
+
+            'waveform': pending['waveform'],
+
+            'endTime': DateTime.parse(pending['endTime']),
+          });
+
+      await prefs.remove(pendingStopKey);
+
+      if (mounted) {
+        setState(() {
+          uploadPending = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Pending upload retry failed: $e");
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
     loadSemesterStatuses();
-
+    retryPendingUpload();
     deviceHeartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       sendDeviceHeartbeat();
     });
@@ -393,6 +435,21 @@ class _HomePageState extends State<HomePage> {
             ),
 
             const SizedBox(height: 24),
+
+            if (uploadPending)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+
+                child: Text(
+                  "STATUS: Upload Pending",
+
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
 
             const HarmonyProgressCard(),
 

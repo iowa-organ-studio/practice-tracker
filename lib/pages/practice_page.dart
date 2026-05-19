@@ -14,6 +14,7 @@ import '../services/user_service.dart';
 import 'home_page.dart';
 import '../theme/app_colors.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'dart:convert';
 
 class PracticePage extends StatefulWidget {
   final String instrument;
@@ -35,7 +36,7 @@ class _PracticePageState extends State<PracticePage>
   Timer? heartbeatTimer;
   StreamSubscription? overlapSubscription;
   int seconds = 0;
-
+  static const pendingStopKey = 'pending_stop_upload';
   DateTime? startTime;
 
   List<Segment> timeline = [];
@@ -51,6 +52,8 @@ class _PracticePageState extends State<PracticePage>
   bool conflictAlreadyCreated = false;
 
   bool isSavingSession = false;
+
+  bool uploadPending = false;
 
   bool isPaused = false;
 
@@ -512,6 +515,35 @@ class _PracticePageState extends State<PracticePage>
     }
   }
 
+  Future<void> savePendingStopUpload() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final pendingData = {
+      'sessionId': sessionId,
+      'duration': seconds,
+      'endTime': DateTime.now().toIso8601String(),
+
+      'timeline': timeline
+          .map(
+            (e) => {
+              'start': e.start,
+              'moving': e.moving,
+              'flagged': e.flagged,
+              'paused': e.paused,
+              'resolved': e.resolved,
+              'fraudulent': e.fraudulent,
+            },
+          )
+          .toList(),
+
+      'waveform': waveform
+          .map((e) => {'second': e.second, 'amplitude': e.amplitude})
+          .toList(),
+    };
+
+    await prefs.setString(pendingStopKey, jsonEncode(pendingData));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -912,6 +944,21 @@ class _PracticePageState extends State<PracticePage>
                         const CircularProgressIndicator(),
                       ],
 
+                      if (uploadPending)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 10),
+
+                          child: Text(
+                            "STATUS: Upload Pending",
+
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: gold,
@@ -941,6 +988,7 @@ class _PracticePageState extends State<PracticePage>
                                         },
                                       )
                                       .toList(),
+
                                   'waveform': waveform
                                       .map(
                                         (e) => {
@@ -949,11 +997,32 @@ class _PracticePageState extends State<PracticePage>
                                         },
                                       )
                                       .toList(),
+
                                   'endTime': DateTime.now(),
-                                });
+                                })
+                                .timeout(const Duration(seconds: 10));
                           } catch (e) {
                             debugPrint("Error updating session: $e");
+
+                            await savePendingStopUpload();
+
+                            if (mounted) {
+                              setState(() {
+                                uploadPending = true;
+                              });
+                            }
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                duration: Duration(seconds: 8),
+
+                                content: Text(
+                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
+                                ),
+                              ),
+                            );
                           }
+
                           if (!mounted) return;
 
                           Navigator.pushAndRemoveUntil(

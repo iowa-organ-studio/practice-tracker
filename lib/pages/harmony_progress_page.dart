@@ -211,7 +211,7 @@ class HarmonyCompetencyCard extends StatelessWidget {
   String wedgeIcon(HarmonyWedge wedge) {
     switch (wedge) {
       case HarmonyWedge.hands:
-        return "P̶e̶d̶a̶l̶";
+        return "2 hands";
 
       case HarmonyWedge.keys3:
         return "3♯♭";
