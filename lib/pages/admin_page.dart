@@ -10,6 +10,8 @@ import 'last_week_overview_page.dart';
 
 import 'conflict_resolution_page.dart';
 
+import 'admin_harmony_progress_page.dart';
+
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
 
@@ -99,6 +101,28 @@ class AdminPage extends StatelessWidget {
               onPressed: () {},
 
               child: const Text("Other Tools"),
+            ),
+
+            const SizedBox(height: 40),
+
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: gold,
+                minimumSize: const Size(260, 50),
+              ),
+
+              onPressed: () {
+                Navigator.push(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) => const AdminHarmonyProgressPage(),
+                  ),
+                );
+              },
+
+              child: const Text("Update Student Harmony Progress"),
             ),
           ],
         ),

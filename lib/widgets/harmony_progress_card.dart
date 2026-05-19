@@ -5,78 +5,289 @@ import '../models/harmony_state.dart';
 
 import '../models/harmony_wedge.dart';
 import '../pages/harmony_progress_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class HarmonyProgressCard extends StatelessWidget {
+import '../services/user_service.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+
+class HarmonyProgressCard extends StatefulWidget {
   const HarmonyProgressCard({super.key});
 
   @override
+  State<HarmonyProgressCard> createState() => _HarmonyProgressCardState();
+}
+
+class _HarmonyProgressCardState extends State<HarmonyProgressCard> {
+  int refreshCounter = 0;
+
+  bool competencyLocked(List<HarmonyCompetency> competencies, int index) {
+    if (index == 0) {
+      return false;
+    }
+
+    final previous = competencies[index - 1];
+
+    return !previous.wedges.values.any(
+      (s) => s == HarmonyState.complete || s == HarmonyState.embellished,
+    );
+  }
+
+  bool competencyMastered(HarmonyCompetency competency) {
+    return competency.wedges.values.every((s) => s == HarmonyState.embellished);
+  }
+
+  Future<List<HarmonyCompetency>> loadCompetencies() async {
+    final uid = await getUid();
+
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    final user = userDoc.data() ?? {};
+
+    final progress = Map<String, dynamic>.from(user['harmonyProgress'] ?? {});
+
+    return harmonyCompetencies.map((competency) {
+      final updatedWedges = Map<HarmonyWedge, HarmonyState>.from(
+        competency.wedges,
+      );
+
+      final competencyData = progress[competency.id] ?? {};
+
+      for (final wedge in HarmonyWedge.values) {
+        final wedgeKey = wedge.name;
+
+        final wedgeData = competencyData[wedgeKey] ?? {};
+
+        final embellished = wedgeData['embellished'] == true;
+
+        final complete = wedgeData['complete'] == true;
+
+        if (embellished) {
+          updatedWedges[wedge] = HarmonyState.embellished;
+        } else if (complete) {
+          updatedWedges[wedge] = HarmonyState.complete;
+        }
+      }
+
+      return HarmonyCompetency(
+        id: competency.id,
+
+        title: competency.title,
+
+        centerIcon: competency.centerIcon,
+
+        wedges: updatedWedges,
+      );
+    }).toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
+    return FutureBuilder<List<HarmonyCompetency>>(
+      future: loadCompetencies().then((v) => v),
 
-          MaterialPageRoute(builder: (_) => const HarmonyProgressPage()),
-        );
-      },
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox();
+        }
 
-      child: Card(
-        elevation: 3,
+        final competencies = snapshot.data!;
 
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        return InkWell(
+          onTap: () async {
+            await Navigator.push(
+              context,
 
-        child: Padding(
-          padding: const EdgeInsets.all(10),
+              MaterialPageRoute(builder: (_) => const HarmonyProgressPage()),
+            );
 
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            if (mounted) {
+              setState(() {
+                refreshCounter++;
+              });
+            }
+          },
 
-            children: [
-              const Text(
-                "Harmony Progress",
+          child: Card(
+            elevation: 3,
 
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
 
-              const SizedBox(height: 8),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
 
-              Column(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  const Text(
+                    "Harmony Progress",
 
-                    children: List.generate(9, (index) {
-                      final competency = harmonyCompetencies[index];
-
-                      return HarmonyWheel(
-                        competency: competency,
-
-                        number: index + 1,
-                      );
-                    }),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
 
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
 
-                    children: List.generate(9, (index) {
-                      final competency = harmonyCompetencies[index + 9];
+                        children: List.generate(9, (index) {
+                          final competency = competencies[index];
 
-                      return HarmonyWheel(
-                        competency: competency,
+                          final locked = competencyLocked(competencies, index);
 
-                        number: index + 10,
-                      );
-                    }),
+                          final mastered = competencyMastered(competency);
+
+                          return locked
+                              ? SizedBox(
+                                  width: 30,
+                                  height: 44,
+
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        "${index + 1}",
+
+                                        style: const TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 2),
+
+                                      SvgPicture.asset(
+                                        'assets/Lock_Icon.svg',
+
+                                        width: 26,
+                                        height: 26,
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : mastered
+                              ? SizedBox(
+                                  width: 30,
+                                  height: 44,
+
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        "${index + 1}",
+
+                                        style: const TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 2),
+
+                                      SvgPicture.asset(
+                                        'assets/Bach_Seal.svg',
+
+                                        width: 26,
+                                        height: 26,
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : HarmonyWheel(
+                                  competency: competency,
+
+                                  number: index + 1,
+                                );
+                        }),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+
+                        children: List.generate(9, (index) {
+                          final competency = competencies[index + 9];
+
+                          final locked = competencyLocked(
+                            competencies,
+                            index + 9,
+                          );
+
+                          final mastered = competencyMastered(competency);
+
+                          return locked
+                              ? SizedBox(
+                                  width: 30,
+                                  height: 44,
+
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        "${index + 10}",
+
+                                        style: const TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 2),
+
+                                      SvgPicture.asset(
+                                        'assets/Lock_Icon.svg',
+
+                                        width: 26,
+                                        height: 26,
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : mastered
+                              ? SizedBox(
+                                  width: 30,
+                                  height: 44,
+
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        "${index + 10}",
+
+                                        style: const TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 2),
+
+                                      SvgPicture.asset(
+                                        'assets/Bach_Seal.svg',
+
+                                        width: 26,
+                                        height: 26,
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : HarmonyWheel(
+                                  competency: competency,
+
+                                  number: index + 10,
+                                );
+                        }),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -96,7 +307,7 @@ class HarmonyWheel extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: 30,
-      height: 44,
+      height: 46,
 
       child: Column(
         children: [
@@ -127,7 +338,16 @@ class HarmonyWheelPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
 
-    final wedges = HarmonyWedge.values;
+    final wedges = [
+      HarmonyWedge.hands,
+      HarmonyWedge.hymnTexture,
+      HarmonyWedge.soloSopranoTexture,
+      HarmonyWedge.soloTenorTexture,
+      HarmonyWedge.peglegTexture,
+      HarmonyWedge.keys3,
+      HarmonyWedge.keys5,
+      HarmonyWedge.keys7,
+    ];
 
     for (int i = 0; i < 8; i++) {
       final wedge = wedges[i];
@@ -142,11 +362,11 @@ class HarmonyWheelPainter extends CustomPainter {
           break;
 
         case HarmonyState.complete:
-          color = Colors.black;
+          color = const Color(0xFFD4AF37);
           break;
 
         case HarmonyState.embellished:
-          color = const Color(0xFFD4AF37);
+          color = Colors.black;
           break;
       }
 
@@ -156,7 +376,7 @@ class HarmonyWheelPainter extends CustomPainter {
 
       canvas.drawArc(
         rect,
-        (i * 45) * 3.1415926535 / 180,
+        ((i * 45) + 180) * 3.1415926535 / 180,
 
         45 * 3.1415926535 / 180,
 
@@ -171,7 +391,7 @@ class HarmonyWheelPainter extends CustomPainter {
 
       canvas.drawArc(
         rect,
-        (i * 45) * 3.1415926535 / 180,
+        ((i * 45) + 180) * 3.1415926535 / 180,
 
         45 * 3.1415926535 / 180,
 
@@ -191,6 +411,6 @@ class HarmonyWheelPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
+    return true;
   }
 }

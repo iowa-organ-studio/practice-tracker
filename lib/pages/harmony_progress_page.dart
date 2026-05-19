@@ -11,88 +11,184 @@ import '../models/harmony_wedge.dart';
 import '../theme/app_colors.dart';
 import 'dart:math';
 import '../services/user_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-class HarmonyProgressPage extends StatelessWidget {
+class HarmonyProgressPage extends StatefulWidget {
   const HarmonyProgressPage({super.key});
 
   @override
+  State<HarmonyProgressPage> createState() => _HarmonyProgressPageState();
+}
+
+class _HarmonyProgressPageState extends State<HarmonyProgressPage> {
+  Future<List<HarmonyCompetency>> loadCompetencies() async {
+    final uid = await getUid();
+
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    final user = userDoc.data() ?? {};
+
+    final progress = Map<String, dynamic>.from(user['harmonyProgress'] ?? {});
+
+    return harmonyCompetencies.map((competency) {
+      final updatedWedges = Map<HarmonyWedge, HarmonyState>.from(
+        competency.wedges,
+      );
+
+      final competencyData = progress[competency.id] ?? {};
+
+      for (final wedge in HarmonyWedge.values) {
+        final wedgeKey = wedge.name;
+
+        final wedgeData = competencyData[wedgeKey] ?? {};
+
+        final embellished = wedgeData['embellished'] == true;
+
+        final complete = wedgeData['complete'] == true;
+
+        if (embellished) {
+          updatedWedges[wedge] = HarmonyState.embellished;
+        } else if (complete) {
+          updatedWedges[wedge] = HarmonyState.complete;
+        }
+      }
+
+      return HarmonyCompetency(
+        id: competency.id,
+
+        title: competency.title,
+
+        centerIcon: competency.centerIcon,
+
+        wedges: updatedWedges,
+      );
+    }).toList();
+  }
+
+  bool competencyLocked(List<HarmonyCompetency> competencies, int index) {
+    if (index == 0) {
+      return false;
+    }
+
+    final previous = competencies[index - 1];
+
+    return !previous.wedges.values.any(
+      (s) => s == HarmonyState.complete || s == HarmonyState.embellished,
+    );
+  }
+
+  bool competencyMastered(HarmonyCompetency competency) {
+    return competency.wedges.values.every((s) => s == HarmonyState.embellished);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            FutureBuilder<Map<String, String>>(
-              future: getUserInfo(),
+    return FutureBuilder<List<HarmonyCompetency>>(
+      future: loadCompetencies(),
 
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const SizedBox();
-                }
+      builder: (context, competencySnapshot) {
+        if (!competencySnapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-                final user = snapshot.data!;
+        final competencies = competencySnapshot.data!;
 
-                return Container(
-                  width: double.infinity,
+        return Scaffold(
+          body: SafeArea(
+            child: Column(
+              children: [
+                FutureBuilder<Map<String, String>>(
+                  future: getUserInfo(),
 
-                  color: Colors.black,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox();
+                    }
 
-                  padding: const EdgeInsets.all(12),
+                    final user = snapshot.data!;
 
-                  child: RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: "${user['name'] ?? ''} ",
+                    return Container(
+                      width: double.infinity,
 
-                          style: const TextStyle(
-                            color: gold,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      color: Colors.black,
+
+                      padding: const EdgeInsets.all(12),
+
+                      child: RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: "${user['name'] ?? ''} ",
+
+                              style: const TextStyle(
+                                color: gold,
+
+                                fontSize: 18,
+
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const TextSpan(
+                              text: "Harmony Progress",
+
+                              style: TextStyle(
+                                color: Colors.white,
+
+                                fontSize: 18,
+
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                    );
+                  },
+                ),
 
-                        const TextSpan(
-                          text: "Harmony Progress",
+                const SizedBox(height: 12),
 
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+                const Text(
+                  "Harmony Progress",
+
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: competencies.length,
+
+                    itemBuilder: (context, index) {
+                      final competency = competencies[index];
+
+                      final locked = competencyLocked(competencies, index);
+
+                      final mastered = competencyMastered(competency);
+
+                      return HarmonyCompetencyCard(
+                        competency: competency,
+
+                        number: index + 1,
+
+                        locked: locked,
+
+                        mastered: mastered,
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ],
             ),
-
-            const SizedBox(height: 12),
-
-            const Text(
-              "Harmony Progress",
-
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-
-            Expanded(
-              child: ListView.builder(
-                itemCount: harmonyCompetencies.length,
-
-                itemBuilder: (context, index) {
-                  final competency = harmonyCompetencies[index];
-
-                  return HarmonyCompetencyCard(
-                    competency: competency,
-
-                    number: index + 1,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -101,17 +197,21 @@ class HarmonyCompetencyCard extends StatelessWidget {
   final HarmonyCompetency competency;
 
   final int number;
+  final bool locked;
+  final bool mastered;
 
   const HarmonyCompetencyCard({
     super.key,
     required this.competency,
     required this.number,
+    required this.locked,
+    required this.mastered,
   });
 
   String wedgeIcon(HarmonyWedge wedge) {
     switch (wedge) {
       case HarmonyWedge.hands:
-        return "✋✋";
+        return "P̶e̶d̶a̶l̶";
 
       case HarmonyWedge.keys3:
         return "3♯♭";
@@ -142,10 +242,10 @@ class HarmonyCompetencyCard extends StatelessWidget {
         return Colors.grey;
 
       case HarmonyState.complete:
-        return Colors.black;
+        return gold;
 
       case HarmonyState.embellished:
-        return gold;
+        return Colors.black;
     }
   }
 
@@ -155,10 +255,10 @@ class HarmonyCompetencyCard extends StatelessWidget {
         return Colors.black;
 
       case HarmonyState.complete:
-        return Colors.white;
+        return Colors.black;
 
       case HarmonyState.embellished:
-        return Colors.black;
+        return gold;
     }
   }
 
@@ -187,43 +287,74 @@ class HarmonyCompetencyCard extends StatelessWidget {
                     alignment: Alignment.center,
 
                     children: [
-                      CustomPaint(
-                        size: Size.infinite,
+                      locked
+                          ? Align(
+                              alignment: Alignment.centerLeft,
 
-                        painter: ExpandedHarmonyPainter(
-                          competency: competency,
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 18),
 
-                          wedgeColor: wedgeColor,
+                                child: SvgPicture.asset(
+                                  'assets/Lock_Icon.svg',
 
-                          iconColor: iconColor,
+                                  width: 110,
+                                  height: 110,
+                                ),
+                              ),
+                            )
+                          : mastered
+                          ? Align(
+                              alignment: Alignment.centerLeft,
 
-                          wedgeIcon: wedgeIcon,
-                        ),
-                      ),
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 18),
 
-                      Container(
-                        width: 90,
-                        height: 90,
+                                child: SvgPicture.asset(
+                                  'assets/Bach_Seal.svg',
 
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
+                                  width: 180,
+                                  height: 180,
+                                ),
+                              ),
+                            )
+                          : CustomPaint(
+                              size: Size.infinite,
 
-                          shape: BoxShape.circle,
-                        ),
+                              painter: ExpandedHarmonyPainter(
+                                competency: competency,
 
-                        alignment: Alignment.center,
+                                wedgeColor: wedgeColor,
 
-                        child: Text(
-                          competency.centerIcon,
+                                iconColor: iconColor,
 
-                          textAlign: TextAlign.center,
+                                wedgeIcon: wedgeIcon,
+                              ),
+                            ),
+                      locked || mastered
+                          ? const SizedBox()
+                          : Container(
+                              width: 90,
+                              height: 90,
 
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+
+                                shape: BoxShape.circle,
+                              ),
+
+                              alignment: Alignment.center,
+
+                              child: Text(
+                                competency.centerIcon,
+
+                                textAlign: TextAlign.center,
+
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
                     ],
                   ),
                 ),
