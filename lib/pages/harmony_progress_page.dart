@@ -344,16 +344,37 @@ class HarmonyCompetencyCard extends StatelessWidget {
 
                               alignment: Alignment.center,
 
-                              child: Text(
-                                competency.centerIcon,
+                              child: competency.centerIcon == 'CLOSE'
+                                  ? SvgPicture.asset(
+                                      'assets/CLOSE.svg',
 
-                                textAlign: TextAlign.center,
+                                      width: 48,
+                                      height: 48,
+                                    )
+                                  : competency.centerIcon == 'FAR'
+                                  ? SvgPicture.asset(
+                                      'assets/FAR.svg',
 
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                                      width: 48,
+                                      height: 48,
+                                    )
+                                  : competency.centerIcon == 'PED'
+                                  ? SvgPicture.asset(
+                                      'assets/Ped.svg',
+
+                                      width: 48,
+                                      height: 48,
+                                    )
+                                  : Text(
+                                      competency.centerIcon,
+
+                                      textAlign: TextAlign.center,
+
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                             ),
                     ],
                   ),

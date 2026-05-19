@@ -157,7 +157,7 @@ harmonyCompetencies = [
     title:
         'CPE Bach pedal points',
 
-    centerIcon: '▮▮▮',
+    centerIcon: 'PED'
   ),
 
   HarmonyCompetency.empty(
