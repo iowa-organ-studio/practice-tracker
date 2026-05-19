@@ -44,7 +44,6 @@ class ReviewPage extends StatelessWidget {
 
     for (int i = 0; i < timeline.length; i++) {
       final current = timeline[i];
-
       int end = (i < timeline.length - 1) ? timeline[i + 1].start : seconds;
 
       int duration = end - current.start;
@@ -53,6 +52,8 @@ class ReviewPage extends StatelessWidget {
         paused += duration;
       } else if (current.moving) {
         moving += duration;
+      } else if (current.fraudulent) {
+        // ignored
       } else if (current.flagged) {
         flagged += duration;
       } else {
@@ -128,8 +129,14 @@ class ReviewPage extends StatelessWidget {
             return Segment(
               map['start'] ?? 0,
               map['moving'] ?? false,
+
               flagged: map['flagged'] ?? false,
+
               paused: map['paused'] ?? false,
+
+              resolved: map['resolved'] ?? false,
+
+              fraudulent: map['fraudulent'] ?? false,
             );
           }).toList();
         }
@@ -231,6 +238,10 @@ class ReviewPage extends StatelessWidget {
                                   flagged: map['flagged'] ?? false,
 
                                   paused: map['paused'] ?? false,
+
+                                  resolved: map['resolved'] ?? false,
+
+                                  fraudulent: map['fraudulent'] ?? false,
                                 );
                               })
                               .toList();

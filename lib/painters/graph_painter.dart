@@ -119,18 +119,32 @@ class GraphPainter extends CustomPainter {
 
       final laneMid = graphTop + (graphBottom - graphTop) * 0.5;
 
-      final isUpperLane = seg.moving || seg.paused;
+      final isUpperLane = seg.moving || seg.paused || seg.fraudulent;
 
-      final top = isUpperLane ? graphTop : laneMid;
+      final isResolvedPractice = seg.resolved;
 
-      final bottom = isUpperLane ? laneMid : graphBottom;
+      final top = isResolvedPractice
+          ? laneMid
+          : isUpperLane
+          ? graphTop
+          : laneMid;
+
+      final bottom = isResolvedPractice
+          ? graphBottom
+          : isUpperLane
+          ? laneMid
+          : graphBottom;
 
       final rect = Rect.fromLTRB(x1, top, x2, bottom);
 
       paint.color = seg.paused
           ? Colors.grey
+          : seg.fraudulent
+          ? Colors.grey
           : seg.moving
           ? gold
+          : seg.resolved
+          ? Colors.green
           : seg.flagged
           ? Colors.red
           : Colors.green;

@@ -8,6 +8,8 @@ import 'occupancy_page.dart';
 
 import 'last_week_overview_page.dart';
 
+import 'conflict_resolution_page.dart';
+
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
 
@@ -72,7 +74,15 @@ class AdminPage extends StatelessWidget {
                 minimumSize: const Size(260, 50),
               ),
 
-              onPressed: () {},
+              onPressed: () {
+                Navigator.push(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) => const ConflictResolutionPage(),
+                  ),
+                );
+              },
 
               child: const Text("Conflict Resolution"),
             ),

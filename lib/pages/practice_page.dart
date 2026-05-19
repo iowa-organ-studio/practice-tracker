@@ -42,8 +42,13 @@ class _PracticePageState extends State<PracticePage>
   bool isMoving = false;
   DateTime? movingStartTime;
   DateTime? stillStartTime;
+  DateTime? lastMovementTransitionTime;
   bool isFlagged = false;
   bool initiatedOverlap = false;
+
+  String? activeConflictId;
+
+  bool conflictAlreadyCreated = false;
 
   bool isSavingSession = false;
 
@@ -107,6 +112,8 @@ class _PracticePageState extends State<PracticePage>
               'moving': e.moving,
               'flagged': e.flagged,
               'paused': e.paused,
+              'resolved': e.resolved,
+              'fraudulent': e.fraudulent,
             },
           )
           .toList(),
@@ -130,6 +137,8 @@ class _PracticePageState extends State<PracticePage>
                     'moving': e.moving,
                     'flagged': e.flagged,
                     'paused': e.paused,
+                    'resolved': e.resolved,
+                    'fraudulent': e.fraudulent,
                   },
                 )
                 .toList(),
@@ -139,13 +148,109 @@ class _PracticePageState extends State<PracticePage>
     }
   }
 
+  Future<void> createConflict() async {
+    if (conflictAlreadyCreated) return;
+    if (sessionId == null) return;
+
+    try {
+      final overlappingSessions = await FirebaseFirestore.instance
+          .collection('sessions')
+          .where('instrument', isEqualTo: widget.instrument)
+          .where('endTime', isNull: true)
+          .get();
+
+      final otherSessions = overlappingSessions.docs.where((d) {
+        if (d.id == sessionId) return false;
+        final data = d.data();
+        return data['conflictId'] == null;
+      }).toList();
+
+      if (otherSessions.isEmpty) return;
+
+      final sessionIds = <String>[sessionId!];
+      final uids = <String>[uid];
+      final names = <String>[name];
+
+      for (final doc in otherSessions) {
+        final data = doc.data();
+        sessionIds.add(doc.id);
+        uids.add(data['uid'] ?? '');
+        names.add(data['name'] ?? '');
+      }
+
+      // ✅ NORMALIZE ORDER (this is key)
+      final sortedSessionIds = [...sessionIds]..sort();
+
+      // ✅ CHECK FOR EXISTING CONFLICT (prevents duplicates)
+      final existingConflictsSnapshot = await FirebaseFirestore.instance
+          .collection('conflicts')
+          .where('organ', isEqualTo: widget.instrument)
+          .where('resolved', isEqualTo: false)
+          .get();
+
+      for (final doc in existingConflictsSnapshot.docs) {
+        final data = doc.data();
+        final existingIds = List<String>.from(data['sessionIds'] ?? [])..sort();
+
+        if (existingIds.join('_') == sortedSessionIds.join('_')) {
+          // ✅ Conflict already exists — just attach to it
+          activeConflictId = doc.id;
+          conflictAlreadyCreated = true;
+
+          await FirebaseFirestore.instance
+              .collection('sessions')
+              .doc(sessionId)
+              .update({'conflictId': activeConflictId});
+
+          return;
+        }
+      }
+
+      // ✅ CREATE NEW CONFLICT (only if none exists)
+      debugPrint("CREATING CONFLICT");
+
+      final conflictDoc = await FirebaseFirestore.instance
+          .collection('conflicts')
+          .add({
+            'organ': widget.instrument,
+            'createdAt': DateTime.now(),
+            'sessionIds': sortedSessionIds, // ✅ ALWAYS SORTED
+            'uids': uids,
+            'names': names,
+            'resolved': false,
+            'winnerUid': null,
+            'winnerSessionId': null,
+          });
+
+      activeConflictId = conflictDoc.id;
+      conflictAlreadyCreated = true;
+
+      debugPrint("CONFLICT CREATED: $activeConflictId");
+
+      // ✅ assign conflictId to all sessions
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(sessionId)
+          .update({'conflictId': activeConflictId});
+
+      for (final doc in otherSessions) {
+        await FirebaseFirestore.instance
+            .collection('sessions')
+            .doc(doc.id)
+            .update({'conflictId': activeConflictId});
+      }
+    } catch (e) {
+      debugPrint("Conflict creation failed: $e");
+    }
+  }
+
   Future<void> startOverlapWatcher() async {
     overlapSubscription = FirebaseFirestore.instance
         .collection('sessions')
         .where('instrument', isEqualTo: widget.instrument)
         .where('endTime', isNull: true)
         .snapshots()
-        .listen((snapshot) {
+        .listen((snapshot) async {
           final now = DateTime.now();
 
           bool overlapNow = snapshot.docs.any((doc) {
@@ -163,7 +268,7 @@ class _PracticePageState extends State<PracticePage>
 
             final heartbeatTime = (heartbeat as Timestamp).toDate();
 
-            return now.difference(heartbeatTime) < const Duration(minutes: 5);
+            return now.difference(heartbeatTime) < const Duration(seconds: 90);
           });
 
           final newFlaggedState = widget.instrument != 'Other' && overlapNow;
@@ -185,8 +290,12 @@ class _PracticePageState extends State<PracticePage>
 
             syncTimeline();
 
-            if (!previousFlaggedState && newFlaggedState && !initiatedOverlap) {
-              showOverlapDialog();
+            if (!previousFlaggedState && newFlaggedState) {
+              await createConflict();
+
+              if (!initiatedOverlap) {
+                showOverlapDialog();
+              }
             }
           }
         });
@@ -412,13 +521,22 @@ class _PracticePageState extends State<PracticePage>
         stillStartTime = null;
 
         if (!isMoving) {
-          setState(() {
-            isMoving = true;
+          final enoughTimePassed =
+              lastMovementTransitionTime == null ||
+              now.difference(lastMovementTransitionTime!) >
+                  const Duration(seconds: 2);
 
-            timeline.add(Segment(seconds, true, flagged: isFlagged));
-          });
+          if (enoughTimePassed) {
+            setState(() {
+              isMoving = true;
 
-          syncTimeline();
+              lastMovementTransitionTime = now;
+
+              timeline.add(Segment(seconds, true, flagged: isFlagged));
+            });
+
+            syncTimeline();
+          }
         }
       } else {
         stillStartTime ??= now;
@@ -428,9 +546,18 @@ class _PracticePageState extends State<PracticePage>
         if (isMoving &&
             now.difference(stillStartTime!) >= const Duration(seconds: 5)) {
           setState(() {
-            isMoving = false;
+            final enoughTimePassed =
+                lastMovementTransitionTime == null ||
+                now.difference(lastMovementTransitionTime!) >
+                    const Duration(seconds: 2);
 
-            timeline.add(Segment(seconds, false, flagged: isFlagged));
+            if (enoughTimePassed) {
+              isMoving = false;
+
+              lastMovementTransitionTime = now;
+
+              timeline.add(Segment(seconds, false, flagged: isFlagged));
+            }
           });
 
           syncTimeline();
@@ -467,8 +594,6 @@ class _PracticePageState extends State<PracticePage>
 
       setState(() {
         isPaused = true;
-
-        timeline.add(Segment(seconds, false, paused: true));
       });
 
       syncTimeline();
@@ -483,13 +608,17 @@ class _PracticePageState extends State<PracticePage>
         final resumedSecond = seconds + pausedDuration;
 
         setState(() {
+          final pauseStartSecond = seconds;
+
           seconds = resumedSecond;
 
-          isPaused = false;
+          timeline.add(Segment(pauseStartSecond, false, paused: true));
 
           timeline.add(
             Segment(resumedSecond, isMoving, flagged: isFlagged && !isMoving),
           );
+
+          isPaused = false;
         });
 
         pausedStartTime = null;
@@ -774,6 +903,8 @@ class _PracticePageState extends State<PracticePage>
                                           'moving': e.moving,
                                           'flagged': e.flagged,
                                           'paused': e.paused,
+                                          'resolved': e.resolved,
+                                          'fraudulent': e.fraudulent,
                                         },
                                       )
                                       .toList(),

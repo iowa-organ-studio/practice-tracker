@@ -7,10 +7,16 @@ class Segment {
 
   final bool paused;
 
+  final bool resolved;
+
+  final bool fraudulent;
+
   Segment(
     this.start,
     this.moving, {
     this.flagged = false,
     this.paused = false,
+    this.resolved = false,
+    this.fraudulent = false,
   });
 }
