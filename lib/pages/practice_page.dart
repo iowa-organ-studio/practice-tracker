@@ -271,6 +271,15 @@ class _PracticePageState extends State<PracticePage>
 
             final heartbeatTime = (heartbeat as Timestamp).toDate();
 
+            final sessionStart = (data['startTime'] as Timestamp).toDate();
+
+            final staleSession =
+                now.difference(sessionStart) > const Duration(hours: 3);
+
+            if (staleSession) {
+              return false;
+            }
+
             return now.difference(heartbeatTime) < const Duration(seconds: 90);
           });
 

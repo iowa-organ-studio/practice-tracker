@@ -20,7 +20,11 @@ class AdminHarmonyProgressPage extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data!.docs;
+          final docs = snapshot.data!.docs.where((d) {
+            final data = d.data() as Map<String, dynamic>;
+
+            return (data['role'] ?? 'student') != 'admin';
+          }).toList();
 
           return ListView.builder(
             itemCount: docs.length,
@@ -37,7 +41,7 @@ class AdminHarmonyProgressPage extends StatelessWidget {
 
                     MaterialPageRoute(
                       builder: (_) => StudentHarmonyEditorPage(
-                        uid: docs[index].id,
+                        userDocId: docs[index].id,
 
                         studentName: user['name'] ?? '',
                       ),
@@ -54,13 +58,13 @@ class AdminHarmonyProgressPage extends StatelessWidget {
 }
 
 class StudentHarmonyEditorPage extends StatelessWidget {
-  final String uid;
+  final String userDocId;
 
   final String studentName;
 
   const StudentHarmonyEditorPage({
     super.key,
-    required this.uid,
+    required this.userDocId,
     required this.studentName,
   });
 
@@ -70,7 +74,7 @@ class StudentHarmonyEditorPage extends StatelessWidget {
     required String field,
     required bool value,
   }) async {
-    await FirebaseFirestore.instance.collection('users').doc(uid).set({
+    await FirebaseFirestore.instance.collection('users').doc(userDocId).set({
       'harmonyProgress': {
         competencyId: {
           wedgeKey: {field: value},
@@ -120,7 +124,7 @@ class StudentHarmonyEditorPage extends StatelessWidget {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
-            .doc(uid)
+            .doc(userDocId)
             .snapshots(),
 
         builder: (context, snapshot) {
@@ -151,7 +155,7 @@ class StudentHarmonyEditorPage extends StatelessWidget {
 
                     children: [
                       Text(
-                        competency.title,
+                        "${competencyIndex + 1}. ${competency.title}",
 
                         style: const TextStyle(
                           fontSize: 16,

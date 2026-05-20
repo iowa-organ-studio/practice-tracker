@@ -145,8 +145,6 @@ class ReviewPage extends StatelessWidget {
 
         final totals = computeTotals(timelineList, duration);
 
-        final practiceDuration = totals['practice'] ?? 0;
-
         total += totals['practice']!;
       }
     }
@@ -182,16 +180,25 @@ class ReviewPage extends StatelessWidget {
 
               return Column(
                 children: [
-                  FutureBuilder<DocumentSnapshot>(
+                  FutureBuilder<QuerySnapshot>(
                     future: FirebaseFirestore.instance
                         .collection('users')
-                        .doc(overrideUid ?? uidSnapshot.data!)
+                        .where(
+                          'uid',
+                          isEqualTo: overrideUid ?? uidSnapshot.data!,
+                        )
+                        .limit(1)
                         .get(),
                     builder: (context, snapshot) {
                       if (!snapshot.hasData) return const SizedBox();
 
+                      if (snapshot.data!.docs.isEmpty) {
+                        return const SizedBox();
+                      }
+
                       final user =
-                          snapshot.data!.data() as Map<String, dynamic>;
+                          snapshot.data!.docs.first.data()
+                              as Map<String, dynamic>;
 
                       return Container(
                         width: double.infinity,

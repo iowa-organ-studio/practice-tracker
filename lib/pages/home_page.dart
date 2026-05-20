@@ -147,9 +147,20 @@ class _HomePageState extends State<HomePage> {
     if (uid == null) return;
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
-        'lastDeviceHeartbeat': DateTime.now(),
-      });
+      final query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: uid)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        return;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(query.docs.first.id)
+          .update({'lastDeviceHeartbeat': DateTime.now()});
     } catch (e) {
       debugPrint("Device heartbeat failed: $e");
     }

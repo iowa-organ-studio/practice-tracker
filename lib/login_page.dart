@@ -44,22 +44,26 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final doc = await FirebaseFirestore.instance
+      final query = await FirebaseFirestore.instance
           .collection('users')
-          .doc(uid)
+          .where('uid', isEqualTo: uid)
+          .limit(1)
           .get();
 
-      final deviceId = await getOrCreateDeviceId();
-
-      if (!doc.exists) {
+      if (query.docs.isEmpty) {
         setState(() {
           error = "UID not found";
           loading = false;
         });
+
         return;
       }
 
-      final data = doc.data()!;
+      final doc = query.docs.first;
+
+      final data = doc.data();
+
+      final deviceId = await getOrCreateDeviceId();
 
       final activeDeviceId = data['activeDeviceId'];
 
@@ -89,10 +93,10 @@ class _LoginPageState extends State<LoginPage> {
       final prefs = await SharedPreferences.getInstance();
 
       await prefs.setString('uid', uid);
-      await prefs.setString('name', doc['name']);
-      debugPrint("Saved name: ${doc['name']}");
+      await prefs.setString('name', data['name']);
+      debugPrint("Saved name: ${data['name']}");
       await prefs.setString('role', data['role'] ?? 'student');
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      await FirebaseFirestore.instance.collection('users').doc(doc.id).update({
         'activeDeviceId': deviceId,
         'lastDeviceHeartbeat': DateTime.now(),
       });

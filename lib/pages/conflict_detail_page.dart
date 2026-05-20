@@ -316,6 +316,15 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
                             ),
                           ),
 
+                          Text(
+                            "Firebase document ID: ${s.id}",
+
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+
                           const SizedBox(height: 18),
                         ],
                       ),

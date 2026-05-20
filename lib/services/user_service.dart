@@ -5,8 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 Future<String> getFirstName() async {
   final prefs = await SharedPreferences.getInstance();
 
-  final name =
-      prefs.getString('name') ?? "";
+  final name = prefs.getString('name') ?? "";
 
   debugPrint("Loaded name: $name");
 
@@ -16,42 +15,36 @@ Future<String> getFirstName() async {
 }
 
 Future<String> getUid() async {
-  final prefs =
-      await SharedPreferences.getInstance();
+  final prefs = await SharedPreferences.getInstance();
 
   return prefs.getString('uid') ?? "";
 }
 
-Future<Map<String, String>>
-getUserInfo() async {
-  final prefs =
-      await SharedPreferences.getInstance();
+Future<Map<String, String>> getUserInfo() async {
+  final prefs = await SharedPreferences.getInstance();
 
   return {
-    'name':
-        prefs.getString('name') ?? '',
-    'degree':
-        prefs.getString('degree') ?? '',
-    'year':
-        prefs.getString('year') ?? '',
-    'semester':
-        prefs.getString('semester') ?? '',
+    'name': prefs.getString('name') ?? '',
+    'degree': prefs.getString('degree') ?? '',
+    'year': prefs.getString('year') ?? '',
+    'semester': prefs.getString('semester') ?? '',
   };
 }
 
 Future<int> getMinimumWeeklyMinutes() async {
   final uid = await getUid();
 
-  final doc =
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
+  final query = await FirebaseFirestore.instance
+      .collection('users')
+      .where('uid', isEqualTo: uid)
+      .limit(1)
+      .get();
 
-  if (!doc.exists) {
+  if (query.docs.isEmpty) {
     return 0;
   }
 
-  return ((doc['minWeeklyMinutes'] ?? 0) as num)
-    .toInt();
+  final doc = query.docs.first;
+
+  return ((doc['minimumWeeklyMinutes'] ?? 0) as num).toInt();
 }

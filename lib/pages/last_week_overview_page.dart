@@ -24,6 +24,23 @@ class LastWeekOverviewPage extends StatelessWidget {
     }
   }
 
+  int degreeRank(String degree) {
+    switch (degree) {
+      case 'DMA':
+        return 1;
+
+      case 'MA':
+        return 2;
+
+      case 'BM':
+      case 'BA':
+        return 3;
+
+      default:
+        return 4;
+    }
+  }
+
   Future<Color> getLastWeekColor(String uid, int minimumMinutes) async {
     final semester = await getActiveSemester();
 
@@ -87,7 +104,6 @@ class LastWeekOverviewPage extends StatelessWidget {
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('users')
-                    .where('role', isEqualTo: 'student')
                     .snapshots(),
 
                 builder: (context, snapshot) {
@@ -95,21 +111,39 @@ class LastWeekOverviewPage extends StatelessWidget {
                     return const Center(child: CircularProgressIndicator());
                   }
 
-                  final docs = List<QueryDocumentSnapshot>.from(
-                    snapshot.data!.docs,
-                  );
+                  final docs = snapshot.data!.docs.where((d) {
+                    final data = d.data() as Map<String, dynamic>;
+
+                    return (data['role'] ?? 'student') != 'admin';
+                  }).toList();
 
                   docs.sort((a, b) {
                     final ad = a.data() as Map<String, dynamic>;
 
                     final bd = b.data() as Map<String, dynamic>;
 
-                    final ay = yearRank(ad['year'] ?? '');
+                    final adDegree = ad['degree'] ?? 'Other';
 
-                    final by = yearRank(bd['year'] ?? '');
+                    final bdDegree = bd['degree'] ?? 'Other';
 
-                    if (ay != by) {
-                      return by.compareTo(ay);
+                    final adYear = ad['year'] ?? '';
+
+                    final bdYear = bd['year'] ?? '';
+
+                    final degreeCompare = degreeRank(
+                      adDegree,
+                    ).compareTo(degreeRank(bdDegree));
+
+                    if (degreeCompare != 0) {
+                      return degreeCompare;
+                    }
+
+                    final yearCompare = yearRank(
+                      bdYear,
+                    ).compareTo(yearRank(adYear));
+
+                    if (yearCompare != 0) {
+                      return yearCompare;
                     }
 
                     final an = ad['name'] ?? '';
@@ -159,8 +193,9 @@ class LastWeekOverviewPage extends StatelessWidget {
                                     context,
 
                                     MaterialPageRoute(
-                                      builder: (_) =>
-                                          ReviewPage(overrideUid: doc.id),
+                                      builder: (_) => ReviewPage(
+                                        overrideUid: data['uid'] ?? '',
+                                      ),
                                     ),
                                   );
                                 },
@@ -176,7 +211,7 @@ class LastWeekOverviewPage extends StatelessWidget {
                             FutureBuilder<Color>(
                               future: getLastWeekColor(
                                 doc.id,
-                                data['minWeeklyMinutes'] ?? 0,
+                                data['minimumWeeklyMinutes'] ?? 0,
                               ),
 
                               builder: (context, colorSnapshot) {

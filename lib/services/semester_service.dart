@@ -129,3 +129,31 @@ Future<int> getPracticeMinutesForWeek({
 
   return (totalSeconds / 60).round();
 }
+
+Future<String> getWeekLabelForDate(
+  DateTime date,
+) async {
+  final semester =
+      await getActiveSemester();
+
+  if (semester == null) {
+    return "No Semester";
+  }
+
+  for (final week
+      in semester.weeks) {
+    final inWeek =
+        !date.isBefore(
+              week.start,
+            ) &&
+            !date.isAfter(
+              week.end,
+            );
+
+    if (inWeek) {
+      return "Week ${week.weekNumber}";
+    }
+  }
+
+  return "Outside Semester";
+}

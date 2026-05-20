@@ -25,12 +25,17 @@ class _HarmonyProgressPageState extends State<HarmonyProgressPage> {
   Future<List<HarmonyCompetency>> loadCompetencies() async {
     final uid = await getUid();
 
-    final userDoc = await FirebaseFirestore.instance
+    final query = await FirebaseFirestore.instance
         .collection('users')
-        .doc(uid)
+        .where('uid', isEqualTo: uid)
+        .limit(1)
         .get();
 
-    final user = userDoc.data() ?? {};
+    if (query.docs.isEmpty) {
+      return harmonyCompetencies;
+    }
+
+    final user = query.docs.first.data();
 
     final progress = Map<String, dynamic>.from(user['harmonyProgress'] ?? {});
 
