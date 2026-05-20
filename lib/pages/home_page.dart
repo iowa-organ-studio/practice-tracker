@@ -32,16 +32,23 @@ class _HomePageState extends State<HomePage> {
   List<WeekStatus> semesterStatuses = [];
   static const pendingStopKey = 'pending_stop_upload';
   String semesterTitle = "Semester";
+  bool vacationMode = false;
   bool uploadPending = false;
   Future<void> loadSemesterStatuses() async {
     final semester = await getActiveSemester();
 
     if (semester == null) {
+      setState(() {
+        vacationMode = true;
+      });
+
       return;
     }
 
     setState(() {
       semesterTitle = "${semester.name} Practice";
+
+      vacationMode = false;
     });
 
     final uid = await getUid();
@@ -383,6 +390,19 @@ class _HomePageState extends State<HomePage> {
 
             if (semesterStatuses.isNotEmpty)
               SemesterCard(title: semesterTitle, statuses: semesterStatuses),
+
+            if (vacationMode)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+
+                child: Text(
+                  "Enjoy your vacation! Feel free to keep tracking practice for your own record keeping, but it will not be monitored.",
+
+                  textAlign: TextAlign.center,
+
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
 
             const SizedBox(height: 8),
 

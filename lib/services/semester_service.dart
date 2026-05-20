@@ -6,27 +6,36 @@ import '../models/week_status.dart';
 import '../models/semester_week.dart';
 
 Future<Semester?> getActiveSemester() async {
-  final settingsDoc = await FirebaseFirestore.instance
-      .collection('settings')
-      .doc('semester')
-      .get();
-
-  if (!settingsDoc.exists) {
-    return null;
-  }
-
-  final semesterId = settingsDoc['activeSemester'];
-
-  final semesterDoc = await FirebaseFirestore.instance
+  final snapshot = await FirebaseFirestore.instance
       .collection('semesters')
-      .doc(semesterId)
       .get();
 
-  if (!semesterDoc.exists) {
-    return null;
+  final now = DateTime.now();
+
+  for (final doc in snapshot.docs) {
+    final semester = Semester.fromMap(doc.id, doc.data());
+
+    if (semester.weeks.isEmpty) {
+      continue;
+    }
+
+    final firstWeek = semester.weeks.first;
+
+    final lastWeek = semester.weeks.last;
+
+    final semesterStart = firstWeek.start;
+
+    final semesterEnd = lastWeek.end;
+
+    final inSemester =
+        !now.isBefore(semesterStart) && !now.isAfter(semesterEnd);
+
+    if (inSemester) {
+      return semester;
+    }
   }
 
-  return Semester.fromMap(semesterDoc.id, semesterDoc.data()!);
+  return null;
 }
 
 WeekStatus computeWeekStatus({

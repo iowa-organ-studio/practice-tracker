@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class SemesterWeek {
   final int weekNumber;
 
@@ -17,21 +19,30 @@ class SemesterWeek {
   factory SemesterWeek.fromMap(
     Map<String, dynamic> map,
   ) {
+    final start =
+        (map['start'] as Timestamp)
+            .toDate();
+
+    final end = DateTime(
+      start.year,
+      start.month,
+      start.day + 6,
+      23,
+      59,
+      59,
+    );
+
     return SemesterWeek(
-      weekNumber: map['weekNumber'],
+      weekNumber:
+          map['weekNumber'],
 
-      start:
-          DateTime.parse(
-            map['start'],
-          ),
+      start: start,
 
-      end:
-          DateTime.parse(
-            map['end'],
-          ),
+      end: end,
 
       offWeek:
-          map['offWeek'] ?? false,
+          map['deadWeek'] ??
+          false,
     );
   }
 }

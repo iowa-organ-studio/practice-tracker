@@ -12,6 +12,8 @@ import 'conflict_resolution_page.dart';
 
 import 'admin_harmony_progress_page.dart';
 
+import 'add_edit_semester_page.dart';
+
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
 
@@ -98,7 +100,15 @@ class AdminPage extends StatelessWidget {
                 minimumSize: const Size(260, 50),
               ),
 
-              onPressed: () {},
+              onPressed: () {
+                Navigator.push(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) => const AddEditSemesterPage(),
+                  ),
+                );
+              },
 
               child: const Text("Other Tools"),
             ),
