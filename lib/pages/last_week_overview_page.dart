@@ -5,6 +5,7 @@ import '../widgets/admin_header.dart';
 
 import 'review_page.dart';
 import '../services/semester_service.dart';
+import '../theme/app_colors.dart';
 
 class LastWeekOverviewPage extends StatelessWidget {
   const LastWeekOverviewPage({super.key});
@@ -76,6 +77,14 @@ class LastWeekOverviewPage extends StatelessWidget {
       uid: uid,
       week: previousWeek,
     );
+
+    final topUid = await getTopPracticerUidForWeek(week: previousWeek);
+
+    final isTopPracticer = uid == topUid;
+
+    if (isTopPracticer) {
+      return gold;
+    }
 
     if (minutes >= minimumMinutes) {
       return Colors.green;
@@ -210,7 +219,7 @@ class LastWeekOverviewPage extends StatelessWidget {
 
                             FutureBuilder<Color>(
                               future: getLastWeekColor(
-                                doc.id,
+                                data['uid'] ?? '',
                                 data['minimumWeeklyMinutes'] ?? 0,
                               ),
 
@@ -218,17 +227,44 @@ class LastWeekOverviewPage extends StatelessWidget {
                                 final ledColor =
                                     colorSnapshot.data ?? Colors.grey;
 
-                                return Container(
-                                  width: 18,
+                                final isStar = ledColor == gold;
 
-                                  height: 18,
+                                return isStar
+                                    ? Stack(
+                                        alignment: Alignment.center,
 
-                                  decoration: BoxDecoration(
-                                    color: ledColor,
+                                        children: [
+                                          const Icon(
+                                            Icons.star,
 
-                                    shape: BoxShape.circle,
-                                  ),
-                                );
+                                            color: Colors.amber,
+
+                                            size: 28,
+                                          ),
+
+                                          Container(
+                                            width: 14,
+                                            height: 14,
+
+                                            decoration: BoxDecoration(
+                                              color: ledColor,
+
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : Container(
+                                        width: 18,
+
+                                        height: 18,
+
+                                        decoration: BoxDecoration(
+                                          color: ledColor,
+
+                                          shape: BoxShape.circle,
+                                        ),
+                                      );
                               },
                             ),
                           ],

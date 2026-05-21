@@ -268,7 +268,11 @@ class ReviewPage extends StatelessWidget {
                               .toList();
                         }
 
-                        final duration = s['duration'] ?? 0;
+                        final endTime = s['endTime'];
+
+                        final duration = endTime == null
+                            ? 0
+                            : (s['duration'] ?? 0);
 
                         final totals = computeTotals(timelineList, duration);
 
@@ -387,15 +391,45 @@ class ReviewPage extends StatelessWidget {
 
                                       final startLabel = "$h:$minute$suffix";
 
-                                      return Text(
-                                        "${s['instrument']} — "
-                                        "${formatDate(start)} — "
-                                        "$startLabel — "
-                                        "${formatDuration(practiceDuration)}",
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+
+                                        children: [
+                                          Text(
+                                            "${s['instrument']} — "
+                                            "${formatDate(start)} — "
+                                            "$startLabel — "
+                                            "${formatDuration(practiceDuration)}",
+
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+
+                                          if (s['endTime'] == null)
+                                            const Text(
+                                              "(incomplete session)",
+
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                                fontSize: 12,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+
+                                          if (s['endedOffline'] == true)
+                                            const Text(
+                                              "(session ended offline)",
+
+                                              style: TextStyle(
+                                                color: Colors.orange,
+                                                fontSize: 12,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                        ],
                                       );
                                     },
                                   ),

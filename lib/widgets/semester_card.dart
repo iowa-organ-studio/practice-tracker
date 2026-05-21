@@ -7,11 +7,7 @@ class SemesterCard extends StatelessWidget {
 
   final List<WeekStatus> statuses;
 
-  const SemesterCard({
-    super.key,
-    required this.title,
-    required this.statuses,
-  });
+  const SemesterCard({super.key, required this.title, required this.statuses});
 
   Color getColor(WeekStatus status) {
     switch (status) {
@@ -40,9 +36,7 @@ class SemesterCard extends StatelessWidget {
     return Card(
       elevation: 3,
 
-      margin: const EdgeInsets.symmetric(
-        horizontal: 16,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
 
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -52,50 +46,59 @@ class SemesterCard extends StatelessWidget {
             Text(
               title,
 
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 4),
 
             Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
 
-              children: List.generate(
-                statuses.length,
-                (index) {
-                  return Column(
-                    children: [
-                      Text(
-                        "${index + 1}",
+              children: List.generate(statuses.length, (index) {
+                return Column(
+                  children: [
+                    Text("${index + 1}", style: const TextStyle(fontSize: 10)),
 
-                        style: const TextStyle(
-                          fontSize: 10,
-                        ),
-                      ),
+                    const SizedBox(height: 4),
 
-                      const SizedBox(height: 4),
+                    statuses[index] == WeekStatus.star
+                        ? Stack(
+                            alignment: Alignment.center,
 
-                      Container(
-                        width: 16,
-                        height: 16,
+                            children: [
+                              const Icon(
+                                Icons.star,
 
-                        decoration: BoxDecoration(
-                          color:
-                              getColor(
-                                statuses[index],
+                                color: Colors.amber,
+
+                                size: 26,
                               ),
 
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
+                              Container(
+                                width: 12,
+                                height: 12,
+
+                                decoration: BoxDecoration(
+                                  color: getColor(statuses[index]),
+
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Container(
+                            width: 16,
+                            height: 16,
+
+                            decoration: BoxDecoration(
+                              color: getColor(statuses[index]),
+
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                  ],
+                );
+              }),
             ),
           ],
         ),

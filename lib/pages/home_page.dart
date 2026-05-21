@@ -62,6 +62,7 @@ class _HomePageState extends State<HomePage> {
     List<WeekStatus> loadedStatuses = [];
 
     for (final week in semester.weeks) {
+      final topUid = await getTopPracticerUidForWeek(week: week);
       final minutes = await getPracticeMinutesForWeek(uid: uid, week: week);
 
       final now = DateTime.now();
@@ -73,7 +74,7 @@ class _HomePageState extends State<HomePage> {
         practicedMinutes: minutes,
         minimumMinutes: minimumMinutes,
         isCurrentWeek: isCurrentWeek,
-        isTopPracticer: false,
+        isTopPracticer: uid == topUid,
       );
 
       loadedStatuses.add(status);

@@ -15,15 +15,19 @@ import 'home_page.dart';
 import '../theme/app_colors.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:convert';
+import 'admin_page.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class PracticePage extends StatefulWidget {
   final String instrument;
   final bool initiatedOverlap;
+  final bool adminMode;
 
   const PracticePage({
     super.key,
     required this.instrument,
     this.initiatedOverlap = false,
+    this.adminMode = false,
   });
 
   @override
@@ -367,7 +371,10 @@ class _PracticePageState extends State<PracticePage>
                 // ✅ go home
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        widget.adminMode ? const AdminPage() : const HomePage(),
+                  ),
                   (route) => false,
                 );
               },
@@ -976,9 +983,54 @@ class _PracticePageState extends State<PracticePage>
                         onPressed: () async {
                           timer.cancel();
 
+                          final connectivityResults = await Connectivity()
+                              .checkConnectivity();
+
+                          final offline = connectivityResults.contains(
+                            ConnectivityResult.none,
+                          );
+
+                          if (offline) {
+                            await Future.delayed(const Duration(seconds: 3));
+                            await savePendingStopUpload();
+
+                            if (mounted) {
+                              setState(() {
+                                uploadPending = true;
+                              });
+                            }
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                duration: Duration(seconds: 8),
+
+                                content: Text(
+                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
+                                ),
+                              ),
+                            );
+
+                            if (!mounted) return;
+
+                            Navigator.pushAndRemoveUntil(
+                              context,
+
+                              MaterialPageRoute(
+                                builder: (_) => widget.adminMode
+                                    ? const AdminPage()
+                                    : const HomePage(),
+                              ),
+
+                              (route) => false,
+                            );
+
+                            return;
+                          }
+
                           setState(() {
                             isSavingSession = true;
                           });
+
                           try {
                             await FirebaseFirestore.instance
                                 .collection('sessions')
@@ -1008,12 +1060,16 @@ class _PracticePageState extends State<PracticePage>
                                       .toList(),
 
                                   'endTime': DateTime.now(),
-                                })
-                                .timeout(const Duration(seconds: 10));
+                                });
                           } catch (e) {
                             debugPrint("Error updating session: $e");
 
                             await savePendingStopUpload();
+
+                            await FirebaseFirestore.instance
+                                .collection('sessions')
+                                .doc(sessionId)
+                                .update({'endedOffline': true});
 
                             if (mounted) {
                               setState(() {
@@ -1036,7 +1092,13 @@ class _PracticePageState extends State<PracticePage>
 
                           Navigator.pushAndRemoveUntil(
                             context,
-                            MaterialPageRoute(builder: (_) => const HomePage()),
+
+                            MaterialPageRoute(
+                              builder: (_) => widget.adminMode
+                                  ? const AdminPage()
+                                  : const HomePage(),
+                            ),
+
                             (route) => false,
                           );
                         },

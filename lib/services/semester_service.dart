@@ -88,6 +88,22 @@ Future<int> getPracticeMinutesForWeek({
   for (final doc in snapshot.docs) {
     final data = doc.data();
 
+    final sessionUid = data['uid'];
+
+    final userQuery = await FirebaseFirestore.instance
+        .collection('users')
+        .where('uid', isEqualTo: sessionUid)
+        .limit(1)
+        .get();
+
+    if (userQuery.docs.isNotEmpty) {
+      final userData = userQuery.docs.first.data();
+
+      if ((userData['role'] ?? 'student') == 'admin') {
+        continue;
+      }
+    }
+
     final startTime = (data['startTime'] as Timestamp).toDate();
 
     if (startTime.isBefore(week.start) || startTime.isAfter(week.end)) {
@@ -130,25 +146,15 @@ Future<int> getPracticeMinutesForWeek({
   return (totalSeconds / 60).round();
 }
 
-Future<String> getWeekLabelForDate(
-  DateTime date,
-) async {
-  final semester =
-      await getActiveSemester();
+Future<String> getWeekLabelForDate(DateTime date) async {
+  final semester = await getActiveSemester();
 
   if (semester == null) {
     return "No Semester";
   }
 
-  for (final week
-      in semester.weeks) {
-    final inWeek =
-        !date.isBefore(
-              week.start,
-            ) &&
-            !date.isAfter(
-              week.end,
-            );
+  for (final week in semester.weeks) {
+    final inWeek = !date.isBefore(week.start) && !date.isAfter(week.end);
 
     if (inWeek) {
       return "Week ${week.weekNumber}";
@@ -156,4 +162,38 @@ Future<String> getWeekLabelForDate(
   }
 
   return "Outside Semester";
+}
+
+Future<String?> getTopPracticerUidForWeek({required SemesterWeek week}) async {
+  final usersSnapshot = await FirebaseFirestore.instance
+      .collection('users')
+      .get();
+
+  String? topUid;
+
+  int topMinutes = -1;
+
+  for (final userDoc in usersSnapshot.docs) {
+    final data = userDoc.data();
+
+    if ((data['role'] ?? '') == 'admin') {
+      continue;
+    }
+
+    final uid = data['uid'];
+
+    if (uid == null) {
+      continue;
+    }
+
+    final minutes = await getPracticeMinutesForWeek(uid: uid, week: week);
+
+    if (minutes > topMinutes) {
+      topMinutes = minutes;
+
+      topUid = uid;
+    }
+  }
+
+  return topUid;
 }

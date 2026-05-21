@@ -18,8 +18,63 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'stale_sessions_page.dart';
 
-class AdminPage extends StatelessWidget {
+import 'selection_page.dart';
+
+import 'review_page.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'dart:convert';
+
+class AdminPage extends StatefulWidget {
   const AdminPage({super.key});
+
+  static const pendingStopKey = 'pending_stop_upload';
+
+  @override
+  State<AdminPage> createState() => _AdminPageState();
+}
+
+class _AdminPageState extends State<AdminPage> {
+  @override
+  void initState() {
+    super.initState();
+
+    retryPendingUpload();
+  }
+
+  Future<void> retryPendingUpload() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final raw = prefs.getString(AdminPage.pendingStopKey);
+
+    if (raw == null) {
+      return;
+    }
+
+    try {
+      final pending = Map<String, dynamic>.from(jsonDecode(raw));
+
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(pending['sessionId'])
+          .update({
+            'duration': pending['duration'],
+
+            'timeline': pending['timeline'],
+
+            'waveform': pending['waveform'],
+
+            'endTime': DateTime.parse(pending['endTime']),
+
+            'endedOffline': true,
+          });
+
+      await prefs.remove(AdminPage.pendingStopKey);
+    } catch (e) {
+      debugPrint("Pending upload retry failed: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -215,6 +270,55 @@ class AdminPage extends StatelessWidget {
                       },
 
                       child: const Text("Update Student Harmony Progress"),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            foregroundColor: Colors.white,
+                          ),
+
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const SelectionPage(adminMode: true),
+                              ),
+                            );
+                          },
+
+                          child: const Text("Start Practice"),
+                        ),
+
+                        const SizedBox(width: 16),
+
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.indigo,
+                          ),
+
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+
+                              MaterialPageRoute(
+                                builder: (_) => const ReviewPage(),
+                              ),
+                            );
+                          },
+
+                          child: const Text("Review Sessions"),
+                        ),
+                      ],
                     ),
                   ],
                 ),

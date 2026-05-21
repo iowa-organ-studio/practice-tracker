@@ -6,7 +6,9 @@ import 'practice_page.dart';
 import '../theme/app_colors.dart';
 
 class SelectionPage extends StatelessWidget {
-  const SelectionPage({super.key});
+  final bool adminMode;
+
+  const SelectionPage({super.key, this.adminMode = false});
 
   final List<String> builders = const [
     'Klais',
@@ -103,6 +105,7 @@ class SelectionPage extends StatelessWidget {
                           builder: (_) => PracticePage(
                             instrument: b,
                             initiatedOverlap: inUse,
+                            adminMode: adminMode,
                           ),
                         ),
                       );
@@ -137,4 +140,3 @@ class SelectionPage extends StatelessWidget {
     );
   }
 }
-
