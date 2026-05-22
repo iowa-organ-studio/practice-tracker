@@ -53,7 +53,26 @@ class _CreateSemesterPageState extends State<CreateSemesterPage> {
         firstMonday.day + (i * 7),
       );
 
-      weeks.add({'weekNumber': i + 1, 'start': monday, 'deadWeek': false});
+      final generatedName = semesterType == 'Other'
+          ? "$customSemesterName $selectedYear"
+          : "$semesterType $selectedYear";
+
+      final safeSemesterId = generatedName.replaceAll(' ', '');
+
+      final weekNumber = i + 1;
+
+      final weekId =
+          "${safeSemesterId}Week${weekNumber.toString().padLeft(2, '0')}";
+
+      weeks.add({
+        'weekNumber': weekNumber,
+
+        'weekId': weekId,
+
+        'start': monday,
+
+        'deadWeek': false,
+      });
     }
 
     setState(() {
@@ -125,6 +144,8 @@ class _CreateSemesterPageState extends State<CreateSemesterPage> {
           .map(
             (w) => {
               'weekNumber': w['weekNumber'],
+
+              'weekId': w['weekId'],
 
               'start': w['start'],
 

@@ -1,22 +1,18 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import '../services/user_service.dart';
-
 import 'selection_page.dart';
 import 'review_page.dart';
-
 import '../theme/app_colors.dart';
-
 import '../services/semester_service.dart';
 import '../models/week_status.dart';
 import '../widgets/semester_card.dart';
 import '../widgets/harmony_progress_card.dart';
 import 'dart:convert';
+import '../services/cusp_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -61,11 +57,19 @@ class _HomePageState extends State<HomePage> {
 
     List<WeekStatus> loadedStatuses = [];
 
-    for (final week in semester.weeks) {
-      final topUid = await getTopPracticerUidForWeek(week: week);
-      final minutes = await getPracticeMinutesForWeek(uid: uid, week: week);
+    final now = DateTime.now();
 
-      final now = DateTime.now();
+    for (final week in semester.weeks) {
+      String? topUid;
+
+      if (now.isAfter(week.end)) {
+        topUid = await getTopPracticerUidForWeek(week: week);
+      }
+      final minutes =
+    await getWeekPracticeTotal(
+      uid: uid,
+      weekId: week.weekId,
+    );
 
       final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
 
@@ -98,7 +102,10 @@ class _HomePageState extends State<HomePage> {
       (w) => now.isAfter(w.start) && now.isBefore(w.end),
     );
 
-    return await getPracticeMinutesForWeek(uid: uid, week: currentWeek);
+    return await getWeekPracticeTotal(
+  uid: uid,
+  weekId: currentWeek.weekId,
+);
   }
 
   Future<int> getSemesterDailyAverage() async {
@@ -114,10 +121,11 @@ class _HomePageState extends State<HomePage> {
 
     for (final week in semester.weeks) {
       if (now.isAfter(week.start)) {
-        totalSemesterMinutes += await getPracticeMinutesForWeek(
-          uid: uid,
-          week: week,
-        );
+        totalSemesterMinutes +=
+    await getWeekPracticeTotal(
+      uid: uid,
+      weekId: week.weekId,
+    );
       }
     }
 

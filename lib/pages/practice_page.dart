@@ -17,6 +17,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:convert';
 import 'admin_page.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/week_service.dart';
+import '../services/firebase_paths.dart';
 
 class PracticePage extends StatefulWidget {
   final String instrument;
@@ -76,6 +78,8 @@ class _PracticePageState extends State<PracticePage>
   String role = "";
   String? sessionId;
 
+  WeekInfo? currentWeek;
+
   String formatClockTime(DateTime t) {
     int h = t.hour % 12;
     if (h == 0) h = 12;
@@ -103,188 +107,307 @@ class _PracticePageState extends State<PracticePage>
   }
 
   Future<void> createSession() async {
-    final doc = await FirebaseFirestore.instance.collection('sessions').add({
-      'uid': uid,
-      'name': name,
-      'instrument': widget.instrument,
-      'startTime': startTime,
-      'endTime': null,
-      'status': 'normal',
-      'lastHeartbeat': DateTime.now(),
+    currentWeek = await getCurrentWeekInfo();
 
-      'timeline': timeline
-          .map(
-            (e) => {
-              'start': e.start,
-              'moving': e.moving,
-              'flagged': e.flagged,
-              'paused': e.paused,
-              'resolved': e.resolved,
-              'fraudulent': e.fraudulent,
-            },
-          )
-          .toList(),
-    });
+    if (currentWeek == null) {
+      debugPrint("No current week found");
 
-    sessionId = doc.id;
+      return;
+    }
+
+    final weekDoc = FirebasePaths.weekDoc(
+      uid: uid,
+      weekId: currentWeek!.weekId,
+    );
+
+    final weekSnapshot = await weekDoc.get();
+
+    if (!weekSnapshot.exists) {
+      await weekDoc.set({
+        'semesterId': currentWeek!.semesterId,
+
+        'weekId': currentWeek!.weekId,
+
+        'weekNumber': currentWeek!.weekNumber,
+
+        'totalPracticeMinutes': 0,
+
+        'activeSession': true,
+
+        'currentOrgan': widget.instrument,
+
+        'currentSessionId': null,
+
+        'lastHeartbeat': DateTime.now(),
+      });
+    } else {
+      await weekDoc.update({
+        'activeSession': true,
+
+        'currentOrgan': widget.instrument,
+
+        'lastHeartbeat': DateTime.now(),
+      });
+    }
+
+    final sessionDoc =
+        await FirebasePaths.sessionsCollection(
+          uid: uid,
+          weekId: currentWeek!.weekId,
+        ).add({
+          'uid': uid,
+
+          'name': name,
+
+          'instrument': widget.instrument,
+
+          'startTime': startTime,
+
+          'endTime': null,
+
+          'status': 'normal',
+
+          'timeline': timeline
+              .map(
+                (e) => {
+                  'start': e.start,
+
+                  'moving': e.moving,
+
+                  'flagged': e.flagged,
+
+                  'paused': e.paused,
+
+                  'resolved': e.resolved,
+
+                  'fraudulent': e.fraudulent,
+                },
+              )
+              .toList(),
+        });
+
+    sessionId = sessionDoc.id;
+
+    await weekDoc.update({'currentSessionId': sessionId});
   }
 
   Future<void> syncTimeline() async {
-    if (sessionId == null) return;
+    if (sessionId == null || currentWeek == null) {
+      return;
+    }
 
     try {
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(sessionId)
-          .update({
-            'timeline': timeline
-                .map(
-                  (e) => {
-                    'start': e.start,
-                    'moving': e.moving,
-                    'flagged': e.flagged,
-                    'paused': e.paused,
-                    'resolved': e.resolved,
-                    'fraudulent': e.fraudulent,
-                  },
-                )
-                .toList(),
-          });
+      await FirebasePaths.sessionDoc(
+        uid: uid,
+
+        weekId: currentWeek!.weekId,
+
+        sessionId: sessionId!,
+      ).update({
+        'timeline': timeline
+            .map(
+              (e) => {
+                'start': e.start,
+
+                'moving': e.moving,
+
+                'flagged': e.flagged,
+
+                'paused': e.paused,
+
+                'resolved': e.resolved,
+
+                'fraudulent': e.fraudulent,
+              },
+            )
+            .toList(),
+      });
     } catch (e) {
       debugPrint("Timeline sync failed: $e");
     }
   }
 
   Future<void> createConflict() async {
-    if (conflictAlreadyCreated) return;
-    if (sessionId == null) return;
+    if (conflictAlreadyCreated) {
+      return;
+    }
+
+    if (sessionId == null || currentWeek == null) {
+      return;
+    }
 
     try {
-      final overlappingSessions = await FirebaseFirestore.instance
-          .collection('sessions')
-          .where('instrument', isEqualTo: widget.instrument)
-          .where('endTime', isNull: true)
+      final cusps = await FirebaseFirestore.instance
+          .collectionGroup('weeks')
+          .where('weekId', isEqualTo: currentWeek!.weekId)
           .get();
 
-      final otherSessions = overlappingSessions.docs.where((d) {
-        if (d.id == sessionId) return false;
-        final data = d.data();
-        return data['conflictId'] == null;
+      final overlappingCusps = cusps.docs.where((doc) {
+        final data = doc.data();
+
+        final active = data['activeSession'] == true;
+
+        if (!active) {
+          return false;
+        }
+
+        final organ = data['currentOrgan'];
+
+        if (organ != widget.instrument) {
+          return false;
+        }
+
+        final otherSessionId = data['currentSessionId'];
+
+        if (otherSessionId == sessionId) {
+          return false;
+        }
+
+        final heartbeat = data['lastHeartbeat'];
+
+        if (heartbeat == null) {
+          return false;
+        }
+
+        final heartbeatTime = (heartbeat as Timestamp).toDate();
+
+        final stale = DateTime.now().difference(heartbeatTime).inMinutes > 3;
+
+        if (stale) {
+          return false;
+        }
+
+        return true;
       }).toList();
 
-      if (otherSessions.isEmpty) return;
-
-      final sessionIds = <String>[sessionId!];
-      final uids = <String>[uid];
-      final names = <String>[name];
-
-      for (final doc in otherSessions) {
-        final data = doc.data();
-        sessionIds.add(doc.id);
-        uids.add(data['uid'] ?? '');
-        names.add(data['name'] ?? '');
+      if (overlappingCusps.isEmpty) {
+        return;
       }
 
-      // ✅ NORMALIZE ORDER (this is key)
-      final sortedSessionIds = [...sessionIds]..sort();
+      final sessionRefs = [
+        {'uid': uid, 'weekId': currentWeek!.weekId, 'sessionId': sessionId},
+      ];
 
-      // ✅ CHECK FOR EXISTING CONFLICT (prevents duplicates)
-      final existingConflictsSnapshot = await FirebaseFirestore.instance
-          .collection('conflicts')
-          .where('organ', isEqualTo: widget.instrument)
+      final uids = [uid];
+
+      final names = [name];
+
+      for (final cusp in overlappingCusps) {
+        final data = cusp.data();
+
+        final otherUid = cusp.reference.parent.parent!.id;
+
+        sessionRefs.add({
+          'uid': otherUid,
+
+          'weekId': currentWeek!.weekId,
+
+          'sessionId': data['currentSessionId'],
+        });
+
+        uids.add(otherUid);
+      }
+
+      final existingConflicts = await FirebasePaths.conflictsCollection()
           .where('resolved', isEqualTo: false)
           .get();
 
-      for (final doc in existingConflictsSnapshot.docs) {
+      for (final doc in existingConflicts.docs) {
         final data = doc.data();
-        final existingIds = List<String>.from(data['sessionIds'] ?? [])..sort();
 
-        if (existingIds.join('_') == sortedSessionIds.join('_')) {
-          // ✅ Conflict already exists — just attach to it
+        final existingRefs = List<Map<String, dynamic>>.from(
+          data['sessionRefs'] ?? [],
+        );
+
+        final normalize = (List<Map<String, dynamic>> refs) =>
+            refs.map((e) => "${e['uid']}_${e['sessionId']}").toList()..sort();
+
+        final existingNorm = normalize(existingRefs);
+
+        final currentNorm = normalize(sessionRefs);
+
+        if (existingNorm.join('_') == currentNorm.join('_')) {
           activeConflictId = doc.id;
-          conflictAlreadyCreated = true;
 
-          await FirebaseFirestore.instance
-              .collection('sessions')
-              .doc(sessionId)
-              .update({'conflictId': activeConflictId});
+          conflictAlreadyCreated = true;
 
           return;
         }
       }
 
-      // ✅ CREATE NEW CONFLICT (only if none exists)
-      debugPrint("CREATING CONFLICT");
+      final conflictDoc = await FirebasePaths.conflictsCollection().add({
+        'sessionRefs': sessionRefs,
 
-      final conflictDoc = await FirebaseFirestore.instance
-          .collection('conflicts')
-          .add({
-            'organ': widget.instrument,
-            'createdAt': DateTime.now(),
-            'sessionIds': sortedSessionIds, // ✅ ALWAYS SORTED
-            'uids': uids,
-            'names': names,
-            'resolved': false,
-            'winnerUid': null,
-            'winnerSessionId': null,
-          });
+        'uids': uids,
+
+        'organ': widget.instrument,
+
+        'weekId': currentWeek!.weekId,
+
+        'createdAt': DateTime.now(),
+
+        'resolved': false,
+
+        'winnerSessionId': null,
+      });
 
       activeConflictId = conflictDoc.id;
+
       conflictAlreadyCreated = true;
-
-      debugPrint("CONFLICT CREATED: $activeConflictId");
-
-      // ✅ assign conflictId to all sessions
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(sessionId)
-          .update({'conflictId': activeConflictId});
-
-      for (final doc in otherSessions) {
-        await FirebaseFirestore.instance
-            .collection('sessions')
-            .doc(doc.id)
-            .update({'conflictId': activeConflictId});
-      }
     } catch (e) {
       debugPrint("Conflict creation failed: $e");
     }
   }
 
   Future<void> startOverlapWatcher() async {
+    if (currentWeek == null) {
+      return;
+    }
+
     overlapSubscription = FirebaseFirestore.instance
-        .collection('sessions')
-        .where('instrument', isEqualTo: widget.instrument)
-        .where('endTime', isNull: true)
+        .collectionGroup('weeks')
+        .where('weekId', isEqualTo: currentWeek!.weekId)
         .snapshots()
         .listen((snapshot) async {
           final now = DateTime.now();
 
           bool overlapNow = snapshot.docs.any((doc) {
-            if (doc.id == sessionId) {
+            final data = doc.data();
+
+            final active = data['activeSession'] == true;
+
+            if (!active) {
               return false;
             }
 
-            final data = doc.data();
+            final currentSession = data['currentSessionId'];
+
+            if (currentSession == sessionId) {
+              return false;
+            }
+
+            final organ = data['currentOrgan'];
+
+            if (organ != widget.instrument) {
+              return false;
+            }
 
             final heartbeat = data['lastHeartbeat'];
 
             if (heartbeat == null) {
-              return true;
+              return false;
             }
 
             final heartbeatTime = (heartbeat as Timestamp).toDate();
 
-            final sessionStart = (data['startTime'] as Timestamp).toDate();
+            final stale =
+                now.difference(heartbeatTime) > const Duration(minutes: 3);
 
-            final staleSession =
-                now.difference(sessionStart) > const Duration(hours: 3);
-
-            if (staleSession) {
+            if (stale) {
               return false;
             }
 
-            return now.difference(heartbeatTime) < const Duration(seconds: 90);
+            return true;
           });
 
           final newFlaggedState = widget.instrument != 'Other' && overlapNow;
@@ -299,6 +422,7 @@ class _PracticePageState extends State<PracticePage>
                 Segment(
                   seconds,
                   isMoving,
+
                   flagged: newFlaggedState && !isMoving,
                 ),
               );
@@ -394,28 +518,33 @@ class _PracticePageState extends State<PracticePage>
   }
 
   Future<void> sendHeartbeat() async {
-    if (sessionId == null) return;
+    if (currentWeek == null) {
+      return;
+    }
 
     try {
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(sessionId)
-          .update({'lastHeartbeat': DateTime.now()});
+      await FirebasePaths.weekDoc(
+        uid: uid,
+        weekId: currentWeek!.weekId,
+      ).update({'lastHeartbeat': DateTime.now()});
     } catch (e) {
       debugPrint("Heartbeat update failed: $e");
     }
   }
 
   Future<void> initializePractice() async {
+    debugPrint("INITIALIZE PRACTICE");
     await loadUser();
-
+debugPrint("USER LOADED");
     startTime = DateTime.now();
     initiatedOverlap = widget.initiatedOverlap;
     timeline = [Segment(0, false, flagged: false)];
 
     await createSession();
+    debugPrint("SESSION CREATED");
     if (widget.instrument != 'Other') {
       await startOverlapWatcher();
+      debugPrint("OVERLAP WATCHER STARTED");
     }
     if (mounted) {
       setState(() {});
@@ -562,6 +691,7 @@ class _PracticePageState extends State<PracticePage>
 
   @override
   void initState() {
+    debugPrint("INIT STATE");
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
@@ -709,8 +839,63 @@ class _PracticePageState extends State<PracticePage>
     }
   }
 
+  Future<int> computePracticeMinutes() async {
+    int practice = 0;
+
+    for (int i = 0; i < timeline.length; i++) {
+      final current = timeline[i];
+
+      final end = i < timeline.length - 1 ? timeline[i + 1].start : seconds;
+
+      final duration = end - current.start;
+
+      final legitimate =
+          !current.moving &&
+          !current.paused &&
+          !current.flagged &&
+          !current.fraudulent;
+
+      final resolvedPractice =
+          current.resolved &&
+          !current.fraudulent &&
+          !current.paused &&
+          !current.moving;
+
+      if (legitimate || resolvedPractice) {
+        practice += duration;
+      }
+    }
+
+    return practice;
+  }
+
+  Future<void> recomputeWeekTotal() async {
+    if (currentWeek == null) {
+      return;
+    }
+
+    final sessions = await FirebasePaths.sessionsCollection(
+      uid: uid,
+      weekId: currentWeek!.weekId,
+    ).get();
+
+    int total = 0;
+
+    for (final doc in sessions.docs) {
+      final data = doc.data();
+
+      total += (data['practiceMinutes'] as int?) ?? 0;
+    }
+
+    await FirebasePaths.weekDoc(
+      uid: uid,
+      weekId: currentWeek!.weekId,
+    ).update({'totalPracticeMinutes': total});
+  }
+
   @override
   Widget build(BuildContext context) {
+    debugPrint("PRACTICE BUILD");
     if (startTime == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -1032,35 +1217,64 @@ class _PracticePageState extends State<PracticePage>
                           });
 
                           try {
-                            await FirebaseFirestore.instance
-                                .collection('sessions')
-                                .doc(sessionId)
-                                .update({
-                                  'duration': seconds,
-                                  'timeline': timeline
-                                      .map(
-                                        (e) => {
-                                          'start': e.start,
-                                          'moving': e.moving,
-                                          'flagged': e.flagged,
-                                          'paused': e.paused,
-                                          'resolved': e.resolved,
-                                          'fraudulent': e.fraudulent,
-                                        },
-                                      )
-                                      .toList(),
+                            final practiceMinutes =
+                                await computePracticeMinutes();
 
-                                  'waveform': waveform
-                                      .map(
-                                        (e) => {
-                                          'second': e.second,
-                                          'amplitude': e.amplitude,
-                                        },
-                                      )
-                                      .toList(),
+                            await FirebasePaths.sessionDoc(
+                              uid: uid,
 
-                                  'endTime': DateTime.now(),
-                                });
+                              weekId: currentWeek!.weekId,
+
+                              sessionId: sessionId!,
+                            ).update({
+                              'duration': seconds,
+
+                              'timeline': timeline
+                                  .map(
+                                    (e) => {
+                                      'start': e.start,
+
+                                      'moving': e.moving,
+
+                                      'flagged': e.flagged,
+
+                                      'paused': e.paused,
+
+                                      'resolved': e.resolved,
+
+                                      'fraudulent': e.fraudulent,
+                                    },
+                                  )
+                                  .toList(),
+
+                              'waveform': waveform
+                                  .map(
+                                    (e) => {
+                                      'second': e.second,
+
+                                      'amplitude': e.amplitude,
+                                    },
+                                  )
+                                  .toList(),
+
+                              'endTime': DateTime.now(),
+
+                              'practiceMinutes': practiceMinutes,
+                            });
+
+                            await FirebasePaths.weekDoc(
+                              uid: uid,
+
+                              weekId: currentWeek!.weekId,
+                            ).update({
+                              'activeSession': false,
+
+                              'currentOrgan': null,
+
+                              'currentSessionId': null,
+                            });
+
+                            await recomputeWeekTotal();
                           } catch (e) {
                             debugPrint("Error updating session: $e");
 

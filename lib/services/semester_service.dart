@@ -1,9 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import '../models/semester.dart';
-
 import '../models/week_status.dart';
 import '../models/semester_week.dart';
+import 'cusp_service.dart';
 
 Future<Semester?> getActiveSemester() async {
   final snapshot = await FirebaseFirestore.instance
@@ -164,32 +163,46 @@ Future<String> getWeekLabelForDate(DateTime date) async {
   return "Outside Semester";
 }
 
-Future<String?> getTopPracticerUidForWeek({required SemesterWeek week}) async {
-  final usersSnapshot = await FirebaseFirestore.instance
-      .collection('users')
-      .get();
+Future<String?>
+getTopPracticerUidForWeek({
+  required SemesterWeek week,
+}) async {
+  final usersSnapshot =
+      await FirebaseFirestore
+          .instance
+          .collection('users')
+          .get();
 
   String? topUid;
 
   int topMinutes = -1;
 
-  for (final userDoc in usersSnapshot.docs) {
-    final data = userDoc.data();
+  for (final userDoc
+      in usersSnapshot.docs) {
+    final data =
+        userDoc.data();
 
-    if ((data['role'] ?? '') == 'admin') {
+    if ((data['role'] ??
+            '') ==
+        'admin') {
       continue;
     }
 
-    final uid = data['uid'];
+    final uid =
+        userDoc.id;
 
-    if (uid == null) {
-      continue;
-    }
+    final minutes =
+        await getWeekPracticeTotal(
+          uid: uid,
 
-    final minutes = await getPracticeMinutesForWeek(uid: uid, week: week);
+          weekId:
+              week.weekId,
+        );
 
-    if (minutes > topMinutes) {
-      topMinutes = minutes;
+    if (minutes >
+        topMinutes) {
+      topMinutes =
+          minutes;
 
       topUid = uid;
     }

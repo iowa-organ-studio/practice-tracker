@@ -34,17 +34,20 @@ Future<Map<String, String>> getUserInfo() async {
 Future<int> getMinimumWeeklyMinutes() async {
   final uid = await getUid();
 
-  final query = await FirebaseFirestore.instance
-      .collection('users')
-      .where('uid', isEqualTo: uid)
-      .limit(1)
-      .get();
+  final snapshot =
+      await FirebaseFirestore
+          .instance
+          .collection('users')
+          .doc(uid)
+          .get();
 
-  if (query.docs.isEmpty) {
+  if (!snapshot.exists) {
     return 0;
   }
 
-  final doc = query.docs.first;
+  final data = snapshot.data()!;
 
-  return ((doc['minimumWeeklyMinutes'] ?? 0) as num).toInt();
+  return ((data['minimumWeeklyMinutes'] ?? 0)
+          as num)
+      .toInt();
 }

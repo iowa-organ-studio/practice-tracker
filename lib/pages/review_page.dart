@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 import '../models/segment.dart';
 import '../models/wave_point.dart';
-
 import '../painters/graph_painter.dart';
 import '../painters/waveform_painter.dart';
-
 import '../services/user_service.dart';
-
 import '../theme/app_colors.dart';
-
 import '../services/semester_service.dart';
+import '../services/review_service.dart';
 
 class ReviewPage extends StatelessWidget {
   final String? overrideUid;
@@ -107,11 +103,11 @@ class ReviewPage extends StatelessWidget {
     return "Week $week";
   }
 
-  int computeWeekTotal(List<QueryDocumentSnapshot> docs, String weekLabel) {
+  int computeWeekTotal(List<ReviewSession> docs, String weekLabel) {
     int total = 0;
 
     for (final doc in docs) {
-      final data = doc.data() as Map<String, dynamic>;
+      final data = doc.data;
 
       final start = (data['startTime'] as Timestamp).toDate();
 
@@ -165,18 +161,14 @@ class ReviewPage extends StatelessWidget {
 
           final currentUid = overrideUid ?? uidSnapshot.data!;
 
-          return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('sessions')
-                .where('uid', isEqualTo: currentUid)
-                .orderBy('startTime', descending: true)
-                .snapshots(),
+          return FutureBuilder<List<ReviewSession>>(
+            future: loadReviewSessions(currentUid),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final docs = snapshot.data!.docs;
+              final docs = snapshot.data!;
 
               return Column(
                 children: [
@@ -224,7 +216,7 @@ class ReviewPage extends StatelessWidget {
                   Expanded(
                     child: ListView(
                       children: docs.map((doc) {
-                        final s = doc.data() as Map<String, dynamic>;
+                        final s = doc.data;
 
                         final rawTimeline = s['timeline'];
                         final rawWaveform = s['waveform'];
@@ -298,9 +290,7 @@ class ReviewPage extends StatelessWidget {
                                 } else {
                                   final previousDoc = docs[currentIndex - 1];
 
-                                  final previousData =
-                                      previousDoc.data()
-                                          as Map<String, dynamic>;
+                                  final previousData = previousDoc.data;
 
                                   final previousStart =
                                       (previousData['startTime'] as Timestamp)

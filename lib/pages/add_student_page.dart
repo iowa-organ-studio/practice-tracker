@@ -46,10 +46,14 @@ class _AddStudentPageState extends State<AddStudentPage> {
       semesterNumber: semesterNumber,
     );
 
-    await FirebaseFirestore.instance.collection('users').add({
+    final uid = uidController.text.trim();
+
+    await FirebaseFirestore.instance.collection('users').doc(uid).set({
       'name': nameController.text,
 
       'uid': uidController.text.trim(),
+
+      'role': 'student',
 
       'email': emailController.text,
 

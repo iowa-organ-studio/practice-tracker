@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
+import '../services/week_service.dart';
+import '../services/firebase_paths.dart';
+
 class StaleSessionsPage extends StatelessWidget {
   const StaleSessionsPage({super.key});
 
@@ -27,7 +30,10 @@ class StaleSessionsPage extends StatelessWidget {
 
     final m = d.minute.toString().padLeft(2, '0');
 
-    final suffix = d.hour >= 12 ? 'pm' : 'am';
+    final suffix =
+        d.hour >= 12
+        ? 'pm'
+        : 'am';
 
     return "${d.day} "
         "${months[d.month - 1]} "
@@ -37,159 +43,404 @@ class StaleSessionsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Stale Sessions")),
+    return FutureBuilder<WeekInfo?>(
+      future: getCurrentWeekInfo(),
 
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('sessions').snapshots(),
-
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final now = DateTime.now();
-
-          final staleDocs = snapshot.data!.docs.where((d) {
-            final data = d.data() as Map<String, dynamic>;
-
-            final endTime = data['endTime'];
-
-            if (endTime != null) {
-              return false;
-            }
-
-            final heartbeat = data['lastHeartbeat'];
-
-            if (heartbeat == null) {
-              return true;
-            }
-
-            final heartbeatTime = (heartbeat as Timestamp).toDate();
-
-            return now.difference(heartbeatTime).inMinutes > 10;
-          }).toList();
-
-          if (staleDocs.isEmpty) {
-            return const Center(child: Text("No stale sessions"));
-          }
-
-          return ListView(
-            children: staleDocs.map((d) {
-              final data = d.data() as Map<String, dynamic>;
-
-              final start = (data['startTime'] as Timestamp).toDate();
-
-              final heartbeat = data['lastHeartbeat'] == null
-                  ? null
-                  : (data['lastHeartbeat'] as Timestamp).toDate();
-
-              return Card(
-                margin: const EdgeInsets.all(12),
-
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                    children: [
-                      Text(
-                        "${data['name']} — ${data['instrument']}",
-
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      Text("Started: ${formatDateTime(start)}"),
-
-                      const SizedBox(height: 4),
-
-                      Text(
-                        heartbeat == null
-                            ? "Last heartbeat: none"
-                            : "Last heartbeat: ${formatDateTime(heartbeat)}",
-                      ),
-
-                      const SizedBox(height: 4),
-
-                      Text(
-                        "Firebase document ID: ${d.id}",
-
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      StaleSessionActions(
-                        sessionId: d.id,
-
-                        initialEndTime: heartbeat ?? DateTime.now(),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
+      builder: (
+        context,
+        weekSnapshot,
+      ) {
+        if (!weekSnapshot
+            .hasData) {
+          return const Scaffold(
+            body: Center(
+              child:
+                  CircularProgressIndicator(),
+            ),
           );
-        },
-      ),
+        }
+
+        final week =
+            weekSnapshot.data;
+
+        if (week == null) {
+          return const Scaffold(
+            body: Center(
+              child: Text(
+                "No active week",
+              ),
+            ),
+          );
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              "Stale Sessions",
+            ),
+          ),
+
+          body: StreamBuilder<
+            QuerySnapshot
+          >(
+            stream:
+                FirebaseFirestore
+                    .instance
+                    .collectionGroup(
+                      'weeks',
+                    )
+                    .where(
+                      'weekId',
+                      isEqualTo:
+                          week.weekId,
+                    )
+                    .snapshots(),
+
+            builder: (
+              context,
+              snapshot,
+            ) {
+              if (!snapshot
+                  .hasData) {
+                return const Center(
+                  child:
+                      CircularProgressIndicator(),
+                );
+              }
+
+              final now =
+                  DateTime.now();
+
+              final staleCusps =
+                  snapshot.data!.docs.where((
+                    doc,
+                  ) {
+                    final data =
+                        doc.data()
+                            as Map<
+                              String,
+                              dynamic
+                            >;
+
+                    final active =
+                        data['activeSession'] ==
+                        true;
+
+                    if (!active) {
+                      return false;
+                    }
+
+                    final heartbeat =
+                        data['lastHeartbeat'];
+
+                    if (heartbeat ==
+                        null) {
+                      return true;
+                    }
+
+                    final heartbeatTime =
+                        (heartbeat
+                                as Timestamp)
+                            .toDate();
+
+                    return now
+                            .difference(
+                              heartbeatTime,
+                            )
+                            .inMinutes >
+                        10;
+                  }).toList();
+
+              if (staleCusps
+                  .isEmpty) {
+                return const Center(
+                  child: Text(
+                    "No stale sessions",
+                  ),
+                );
+              }
+
+              return ListView(
+                children:
+                    staleCusps.map((
+                      cusp,
+                    ) {
+                      final data =
+                          cusp.data()
+                              as Map<
+                                String,
+                                dynamic
+                              >;
+
+                      final uid =
+                          cusp
+                              .reference
+                              .parent
+                              .parent!
+                              .id;
+
+                      final sessionId =
+                          data['currentSessionId'];
+
+                      final start =
+                          (data['lastHeartbeat']
+                                  as Timestamp)
+                              .toDate();
+
+                      final heartbeat =
+                          (data['lastHeartbeat']
+                                  as Timestamp)
+                              .toDate();
+
+                      return FutureBuilder<
+                        DocumentSnapshot
+                      >(
+                        future:
+                            FirebasePaths.sessionDoc(
+                              uid: uid,
+
+                              weekId:
+                                  week
+                                      .weekId,
+
+                              sessionId:
+                                  sessionId,
+                            ).get(),
+
+                        builder: (
+                          context,
+                          sessionSnapshot,
+                        ) {
+                          if (!sessionSnapshot
+                              .hasData) {
+                            return const SizedBox();
+                          }
+
+                          if (!sessionSnapshot
+                              .data!
+                              .exists) {
+                            return const SizedBox();
+                          }
+
+                          final session =
+                              sessionSnapshot
+                                      .data!
+                                      .data()
+                                  as Map<
+                                    String,
+                                    dynamic
+                                  >;
+
+                          return Card(
+                            margin:
+                                const EdgeInsets.all(
+                                  12,
+                                ),
+
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.all(
+                                    14,
+                                  ),
+
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment
+                                        .start,
+
+                                children: [
+                                  Text(
+                                    "${session['name']} — ${session['instrument']}",
+
+                                    style:
+                                        const TextStyle(
+                                          fontSize:
+                                              18,
+
+                                          fontWeight:
+                                              FontWeight.bold,
+                                        ),
+                                  ),
+
+                                  const SizedBox(
+                                    height:
+                                        8,
+                                  ),
+
+                                  Text(
+                                    "Started: ${formatDateTime(start)}",
+                                  ),
+
+                                  const SizedBox(
+                                    height:
+                                        4,
+                                  ),
+
+                                  Text(
+                                    "Last heartbeat: ${formatDateTime(heartbeat)}",
+                                  ),
+
+                                  const SizedBox(
+                                    height:
+                                        4,
+                                  ),
+
+                                  Text(
+                                    "Firebase document ID: $sessionId",
+
+                                    style:
+                                        const TextStyle(
+                                          fontSize:
+                                              12,
+
+                                          color:
+                                              Colors.grey,
+                                        ),
+                                  ),
+
+                                  const SizedBox(
+                                    height:
+                                        14,
+                                  ),
+
+                                  StaleSessionActions(
+                                    uid:
+                                        uid,
+
+                                    weekId:
+                                        week
+                                            .weekId,
+
+                                    sessionId:
+                                        sessionId,
+
+                                    initialEndTime:
+                                        heartbeat,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }).toList(),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
 
-class StaleSessionActions extends StatefulWidget {
+class StaleSessionActions
+    extends StatefulWidget {
+  final String uid;
+
+  final String weekId;
+
   final String sessionId;
 
   final DateTime initialEndTime;
 
   const StaleSessionActions({
     super.key,
+    required this.uid,
+    required this.weekId,
     required this.sessionId,
     required this.initialEndTime,
   });
 
   @override
-  State<StaleSessionActions> createState() => _StaleSessionActionsState();
+  State<StaleSessionActions>
+  createState() =>
+      _StaleSessionActionsState();
 }
 
-class _StaleSessionActionsState extends State<StaleSessionActions> {
-  final TextEditingController controller = TextEditingController();
+class _StaleSessionActionsState
+    extends State<
+      StaleSessionActions
+    > {
+  final TextEditingController
+  controller =
+      TextEditingController();
 
   @override
   void initState() {
     super.initState();
 
-    controller.text = DateFormat(
-      'yyyy-MM-dd HH:mm',
-    ).format(widget.initialEndTime);
+    controller.text =
+        DateFormat(
+          'yyyy-MM-dd HH:mm',
+        ).format(
+          widget.initialEndTime,
+        );
   }
 
-  Future<void> createEndTime() async {
+  Future<void> createEndTime()
+  async {
     try {
-      final parsed = DateFormat('yyyy-MM-dd HH:mm').parse(controller.text);
+      final parsed =
+          DateFormat(
+            'yyyy-MM-dd HH:mm',
+          ).parse(
+            controller.text,
+          );
 
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(widget.sessionId)
-          .update({'endTime': parsed});
+      await FirebasePaths
+          .sessionDoc(
+            uid: widget.uid,
+
+            weekId:
+                widget.weekId,
+
+            sessionId:
+                widget.sessionId,
+          )
+          .update({
+            'endTime':
+                parsed,
+          });
+
+      await FirebasePaths
+          .weekDoc(
+            uid: widget.uid,
+
+            weekId:
+                widget.weekId,
+          )
+          .update({
+            'activeSession':
+                false,
+
+            'currentOrgan':
+                null,
+
+            'currentSessionId':
+                null,
+          });
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("End Time added to session")),
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "End Time added to session",
+          ),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Invalid date format")));
+      ).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Invalid date format",
+          ),
+        ),
+      );
     }
   }
 
@@ -198,78 +449,30 @@ class _StaleSessionActionsState extends State<StaleSessionActions> {
     return Column(
       children: [
         TextField(
-          controller: controller,
+          controller:
+              controller,
 
-          decoration: const InputDecoration(
-            labelText: 'Create end time',
+          decoration:
+              const InputDecoration(
+                labelText:
+                    'Create end time',
 
-            hintText: 'yyyy-MM-dd HH:mm',
-          ),
+                hintText:
+                    'yyyy-MM-dd HH:mm',
+              ),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(
+          height: 12,
+        ),
 
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: createEndTime,
+        ElevatedButton(
+          onPressed:
+              createEndTime,
 
-                child: const Text("Create End Time"),
-              ),
-            ),
-
-            const SizedBox(width: 10),
-
-            Expanded(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-
-                    builder: (_) {
-                      return AlertDialog(
-                        title: const Text("Delete Session?"),
-
-                        content: const Text("This cannot be undone."),
-
-                        actions: [
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context, false);
-                            },
-
-                            child: const Text("Cancel"),
-                          ),
-
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context, true);
-                            },
-
-                            child: const Text("Delete"),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-
-                  if (confirm != true) {
-                    return;
-                  }
-
-                  await FirebaseFirestore.instance
-                      .collection('sessions')
-                      .doc(widget.sessionId)
-                      .delete();
-                },
-
-                child: const Text("Delete Session"),
-              ),
-            ),
-          ],
+          child: const Text(
+            "Create End Time",
+          ),
         ),
       ],
     );
