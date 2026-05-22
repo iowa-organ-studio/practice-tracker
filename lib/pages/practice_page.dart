@@ -237,13 +237,27 @@ class _PracticePageState extends State<PracticePage>
     }
 
     try {
-      final cusps = await FirebaseFirestore.instance
-          .collectionGroup('weeks')
-          .where('weekId', isEqualTo: currentWeek!.weekId)
+      final usersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
           .get();
 
-      final overlappingCusps = cusps.docs.where((doc) {
-        final data = doc.data();
+      List<DocumentSnapshot<Map<String, dynamic>>> cusps = [];
+
+      for (final userDoc in usersSnapshot.docs) {
+        final weekDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userDoc.id)
+            .collection('weeks')
+            .doc(currentWeek!.weekId)
+            .get();
+
+        if (weekDoc.exists) {
+          cusps.add(weekDoc);
+        }
+      }
+
+      final overlappingCusps = cusps.where((doc) {
+        final data = doc.data()!;
 
         final active = data['activeSession'] == true;
 
@@ -293,7 +307,7 @@ class _PracticePageState extends State<PracticePage>
       final names = [name];
 
       for (final cusp in overlappingCusps) {
-        final data = cusp.data();
+        final data = cusp.data()!;
 
         final otherUid = cusp.reference.parent.parent!.id;
 
@@ -364,15 +378,34 @@ class _PracticePageState extends State<PracticePage>
       return;
     }
 
-    overlapSubscription = FirebaseFirestore.instance
-        .collectionGroup('weeks')
-        .where('weekId', isEqualTo: currentWeek!.weekId)
-        .snapshots()
+    overlapSubscription = Stream.periodic(const Duration(seconds: 5))
+        .asyncMap((_) async {
+          final usersSnapshot = await FirebaseFirestore.instance
+              .collection('users')
+              .get();
+
+          List<DocumentSnapshot<Map<String, dynamic>>> cusps = [];
+
+          for (final userDoc in usersSnapshot.docs) {
+            final weekDoc = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userDoc.id)
+                .collection('weeks')
+                .doc(currentWeek!.weekId)
+                .get();
+
+            if (weekDoc.exists) {
+              cusps.add(weekDoc);
+            }
+          }
+
+          return cusps;
+        })
         .listen((snapshot) async {
           final now = DateTime.now();
 
-          bool overlapNow = snapshot.docs.any((doc) {
-            final data = doc.data();
+          bool overlapNow = snapshot.any((doc) {
+            final data = doc.data()!;
 
             final active = data['activeSession'] == true;
 
@@ -466,25 +499,35 @@ class _PracticePageState extends State<PracticePage>
                 // ✅ finalize session in Firestore
                 try {
                   if (sessionId != null) {
-                    await FirebaseFirestore.instance
-                        .collection('sessions')
-                        .doc(sessionId)
-                        .update({
-                          'duration': seconds,
-                          'timeline': timeline
-                              .map(
-                                (e) => {
-                                  'start': e.start,
-                                  'moving': e.moving,
-                                  'flagged': e.flagged,
-                                  'paused': e.paused,
-                                  'resolved': e.resolved,
-                                  'fraudulent': e.fraudulent,
-                                },
-                              )
-                              .toList(),
-                          'endTime': DateTime.now(),
-                        });
+                    await FirebasePaths.sessionDoc(
+                      uid: uid,
+
+                      weekId: currentWeek!.weekId,
+
+                      sessionId: sessionId!,
+                    ).update({
+                      'duration': seconds,
+
+                      'timeline': timeline
+                          .map(
+                            (e) => {
+                              'start': e.start,
+
+                              'moving': e.moving,
+
+                              'flagged': e.flagged,
+
+                              'paused': e.paused,
+
+                              'resolved': e.resolved,
+
+                              'fraudulent': e.fraudulent,
+                            },
+                          )
+                          .toList(),
+
+                      'endTime': DateTime.now(),
+                    });
                   }
                 } catch (e) {
                   debugPrint("Error ending session from conflict dialog: $e");
@@ -535,7 +578,7 @@ class _PracticePageState extends State<PracticePage>
   Future<void> initializePractice() async {
     debugPrint("INITIALIZE PRACTICE");
     await loadUser();
-debugPrint("USER LOADED");
+    debugPrint("USER LOADED");
     startTime = DateTime.now();
     initiatedOverlap = widget.initiatedOverlap;
     timeline = [Segment(0, false, flagged: false)];
@@ -664,6 +707,8 @@ debugPrint("USER LOADED");
     final prefs = await SharedPreferences.getInstance();
 
     final pendingData = {
+      'uid': uid,
+      'weekId': currentWeek!.weekId,
       'sessionId': sessionId,
       'duration': seconds,
       'endTime': DateTime.now().toIso8601String(),
@@ -1280,10 +1325,13 @@ debugPrint("USER LOADED");
 
                             await savePendingStopUpload();
 
-                            await FirebaseFirestore.instance
-                                .collection('sessions')
-                                .doc(sessionId)
-                                .update({'endedOffline': true});
+                            await FirebasePaths.sessionDoc(
+                              uid: uid,
+
+                              weekId: currentWeek!.weekId,
+
+                              sessionId: sessionId!,
+                            ).update({'endedOffline': true});
 
                             if (mounted) {
                               setState(() {

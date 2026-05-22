@@ -13,6 +13,7 @@ import '../widgets/semester_card.dart';
 import '../widgets/harmony_progress_card.dart';
 import 'dart:convert';
 import '../services/cusp_service.dart';
+import '../services/firebase_paths.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -65,11 +66,7 @@ class _HomePageState extends State<HomePage> {
       if (now.isAfter(week.end)) {
         topUid = await getTopPracticerUidForWeek(week: week);
       }
-      final minutes =
-    await getWeekPracticeTotal(
-      uid: uid,
-      weekId: week.weekId,
-    );
+      final minutes = await getWeekPracticeTotal(uid: uid, weekId: week.weekId);
 
       final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
 
@@ -102,10 +99,7 @@ class _HomePageState extends State<HomePage> {
       (w) => now.isAfter(w.start) && now.isBefore(w.end),
     );
 
-    return await getWeekPracticeTotal(
-  uid: uid,
-  weekId: currentWeek.weekId,
-);
+    return await getWeekPracticeTotal(uid: uid, weekId: currentWeek.weekId);
   }
 
   Future<int> getSemesterDailyAverage() async {
@@ -121,11 +115,10 @@ class _HomePageState extends State<HomePage> {
 
     for (final week in semester.weeks) {
       if (now.isAfter(week.start)) {
-        totalSemesterMinutes +=
-    await getWeekPracticeTotal(
-      uid: uid,
-      weekId: week.weekId,
-    );
+        totalSemesterMinutes += await getWeekPracticeTotal(
+          uid: uid,
+          weekId: week.weekId,
+        );
       }
     }
 
@@ -140,10 +133,12 @@ class _HomePageState extends State<HomePage> {
     return (totalSemesterMinutes / safeDays).round();
   }
 
-  String formatHM(int minutes) {
-    final h = minutes ~/ 60;
+  String formatHM(int seconds) {
+    final totalMinutes = seconds ~/ 60;
 
-    final m = minutes % 60;
+    final h = totalMinutes ~/ 60;
+
+    final m = totalMinutes % 60;
 
     return "${h} h ${m} m";
   }
@@ -156,20 +151,18 @@ class _HomePageState extends State<HomePage> {
     if (uid == null) return;
 
     try {
-      final query = await FirebaseFirestore.instance
+      final snapshot = await FirebaseFirestore.instance
           .collection('users')
-          .where('uid', isEqualTo: uid)
-          .limit(1)
+          .doc(uid)
           .get();
 
-      if (query.docs.isEmpty) {
+      if (!snapshot.exists) {
         return;
       }
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(query.docs.first.id)
-          .update({'lastDeviceHeartbeat': DateTime.now()});
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'lastDeviceHeartbeat': DateTime.now(),
+      });
     } catch (e) {
       debugPrint("Device heartbeat failed: $e");
     }
@@ -191,18 +184,21 @@ class _HomePageState extends State<HomePage> {
     try {
       final pending = Map<String, dynamic>.from(jsonDecode(raw));
 
-      await FirebaseFirestore.instance
-          .collection('sessions')
-          .doc(pending['sessionId'])
-          .update({
-            'duration': pending['duration'],
+      await FirebasePaths.sessionDoc(
+        uid: pending['uid'],
 
-            'timeline': pending['timeline'],
+        weekId: pending['weekId'],
 
-            'waveform': pending['waveform'],
+        sessionId: pending['sessionId'],
+      ).update({
+        'duration': pending['duration'],
 
-            'endTime': DateTime.parse(pending['endTime']),
-          });
+        'timeline': pending['timeline'],
+
+        'waveform': pending['waveform'],
+
+        'endTime': DateTime.parse(pending['endTime']),
+      });
 
       await prefs.remove(pendingStopKey);
 

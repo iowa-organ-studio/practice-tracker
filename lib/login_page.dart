@@ -44,13 +44,12 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final query = await FirebaseFirestore.instance
+      final snapshot = await FirebaseFirestore.instance
           .collection('users')
-          .where('uid', isEqualTo: uid)
-          .limit(1)
+          .doc(uid)
           .get();
 
-      if (query.docs.isEmpty) {
+      if (!snapshot.exists) {
         setState(() {
           error = "UID not found";
           loading = false;
@@ -59,9 +58,7 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      final doc = query.docs.first;
-
-      final data = doc.data();
+      final data = snapshot.data()!;
 
       final deviceId = await getOrCreateDeviceId();
 
@@ -84,6 +81,7 @@ class _LoginPageState extends State<LoginPage> {
       if (otherDeviceActive) {
         setState(() {
           error = "Account already active on another device";
+
           loading = false;
         });
 
@@ -93,11 +91,14 @@ class _LoginPageState extends State<LoginPage> {
       final prefs = await SharedPreferences.getInstance();
 
       await prefs.setString('uid', uid);
+
       await prefs.setString('name', data['name']);
-      debugPrint("Saved name: ${data['name']}");
+
       await prefs.setString('role', data['role'] ?? 'student');
-      await FirebaseFirestore.instance.collection('users').doc(doc.id).update({
+
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
         'activeDeviceId': deviceId,
+
         'lastDeviceHeartbeat': DateTime.now(),
       });
 
@@ -112,12 +113,14 @@ class _LoginPageState extends State<LoginPage> {
       } else {
         Navigator.pushReplacement(
           context,
+
           MaterialPageRoute(builder: (_) => const HomePage()),
         );
       }
     } catch (e) {
       setState(() {
         error = "Error connecting to server";
+
         loading = false;
       });
     }

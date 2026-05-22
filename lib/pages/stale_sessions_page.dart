@@ -80,253 +80,286 @@ class StaleSessionsPage extends StatelessWidget {
             ),
           ),
 
-          body: StreamBuilder<
-            QuerySnapshot
-          >(
-            stream:
-                FirebaseFirestore
-                    .instance
-                    .collectionGroup(
-                      'weeks',
-                    )
-                    .where(
-                      'weekId',
-                      isEqualTo:
-                          week.weekId,
-                    )
-                    .snapshots(),
+          body: FutureBuilder<QuerySnapshot>(
+  future:
+      FirebaseFirestore
+          .instance
+          .collection('users')
+          .get(),
 
-            builder: (
-              context,
-              snapshot,
+  builder: (
+    context,
+    userSnapshot,
+  ) {
+    if (userSnapshot
+            .connectionState ==
+        ConnectionState.waiting) {
+      return const Center(
+        child:
+            CircularProgressIndicator(),
+      );
+    }
+
+    final userDocs =
+        userSnapshot.data?.docs ??
+        [];
+
+    return FutureBuilder<
+      List<
+        Map<String, dynamic>
+      >
+    >(
+      future: Future.wait(
+        userDocs.map((
+          userDoc,
+        ) async {
+          final weekDoc =
+              await FirebaseFirestore
+                  .instance
+                  .collection(
+                    'users',
+                  )
+                  .doc(
+                    userDoc.id,
+                  )
+                  .collection(
+                    'weeks',
+                  )
+                  .doc(
+                    week.weekId,
+                  )
+                  .get();
+
+          if (!weekDoc.exists) {
+            return {};
+          }
+
+          return {
+            'uid': userDoc.id,
+
+            'week':
+                weekDoc.data(),
+          };
+        }),
+      ),
+
+      builder: (
+        context,
+        cuspSnapshot,
+      ) {
+        if (cuspSnapshot
+                .connectionState ==
+            ConnectionState.waiting) {
+          return const Center(
+            child:
+                CircularProgressIndicator(),
+          );
+        }
+
+        final cuspData =
+            cuspSnapshot.data ??
+            [];
+
+        final now =
+            DateTime.now();
+
+        final staleCusps =
+            cuspData.where((
+              entry,
             ) {
-              if (!snapshot
-                  .hasData) {
-                return const Center(
-                  child:
-                      CircularProgressIndicator(),
-                );
+              if (entry.isEmpty) {
+                return false;
               }
 
-              final now =
-                  DateTime.now();
+              final data =
+                  entry['week']
+                      as Map<
+                        String,
+                        dynamic
+                      >;
 
-              final staleCusps =
-                  snapshot.data!.docs.where((
-                    doc,
+              final active =
+                  data['activeSession'] ==
+                  true;
+
+              if (!active) {
+                return false;
+              }
+
+              final heartbeat =
+                  data['lastHeartbeat'];
+
+              if (heartbeat ==
+                  null) {
+                return true;
+              }
+
+              final heartbeatTime =
+                  (heartbeat
+                          as Timestamp)
+                      .toDate();
+
+              return now
+                      .difference(
+                        heartbeatTime,
+                      )
+                      .inMinutes >
+                  10;
+            }).toList();
+
+        if (staleCusps
+            .isEmpty) {
+          return const Center(
+            child: Text(
+              "No stale sessions",
+            ),
+          );
+        }
+
+        return ListView(
+          children:
+              staleCusps.map((
+                entry,
+              ) {
+                final uid =
+                    entry['uid'];
+
+                final data =
+                    entry['week']
+                        as Map<
+                          String,
+                          dynamic
+                        >;
+
+                final sessionId =
+                    data['currentSessionId'];
+
+                final heartbeat =
+                    (data['lastHeartbeat']
+                            as Timestamp)
+                        .toDate();
+
+                return FutureBuilder<
+                  DocumentSnapshot
+                >(
+                  future:
+                      FirebasePaths.sessionDoc(
+                        uid: uid,
+
+                        weekId:
+                            week.weekId,
+
+                        sessionId:
+                            sessionId,
+                      ).get(),
+
+                  builder: (
+                    context,
+                    sessionSnapshot,
                   ) {
-                    final data =
-                        doc.data()
+                    if (!sessionSnapshot
+                        .hasData) {
+                      return const SizedBox();
+                    }
+
+                    if (!sessionSnapshot
+                        .data!
+                        .exists) {
+                      return const SizedBox();
+                    }
+
+                    final session =
+                        sessionSnapshot
+                                .data!
+                                .data()
                             as Map<
                               String,
                               dynamic
                             >;
 
-                    final active =
-                        data['activeSession'] ==
-                        true;
-
-                    if (!active) {
-                      return false;
-                    }
-
-                    final heartbeat =
-                        data['lastHeartbeat'];
-
-                    if (heartbeat ==
-                        null) {
-                      return true;
-                    }
-
-                    final heartbeatTime =
-                        (heartbeat
+                    final start =
+                        (session['startTime']
                                 as Timestamp)
                             .toDate();
 
-                    return now
-                            .difference(
-                              heartbeatTime,
-                            )
-                            .inMinutes >
-                        10;
-                  }).toList();
+                    return Card(
+                      margin:
+                          const EdgeInsets.all(
+                            12,
+                          ),
 
-              if (staleCusps
-                  .isEmpty) {
-                return const Center(
-                  child: Text(
-                    "No stale sessions",
-                  ),
-                );
-              }
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.all(
+                              14,
+                            ),
 
-              return ListView(
-                children:
-                    staleCusps.map((
-                      cusp,
-                    ) {
-                      final data =
-                          cusp.data()
-                              as Map<
-                                String,
-                                dynamic
-                              >;
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment
+                                  .start,
 
-                      final uid =
-                          cusp
-                              .reference
-                              .parent
-                              .parent!
-                              .id;
+                          children: [
+                            Text(
+                              "${session['name']} — ${session['instrument']}",
 
-                      final sessionId =
-                          data['currentSessionId'];
+                              style:
+                                  const TextStyle(
+                                    fontSize:
+                                        18,
 
-                      final start =
-                          (data['lastHeartbeat']
-                                  as Timestamp)
-                              .toDate();
+                                    fontWeight:
+                                        FontWeight.bold,
+                                  ),
+                            ),
 
-                      final heartbeat =
-                          (data['lastHeartbeat']
-                                  as Timestamp)
-                              .toDate();
+                            const SizedBox(
+                              height:
+                                  8,
+                            ),
 
-                      return FutureBuilder<
-                        DocumentSnapshot
-                      >(
-                        future:
-                            FirebasePaths.sessionDoc(
+                            Text(
+                              "Started: ${formatDateTime(start)}",
+                            ),
+
+                            const SizedBox(
+                              height:
+                                  4,
+                            ),
+
+                            Text(
+                              "Last heartbeat: ${formatDateTime(heartbeat)}",
+                            ),
+
+                            const SizedBox(
+                              height:
+                                  14,
+                            ),
+
+                            StaleSessionActions(
                               uid: uid,
 
                               weekId:
-                                  week
-                                      .weekId,
+                                  week.weekId,
 
                               sessionId:
                                   sessionId,
-                            ).get(),
 
-                        builder: (
-                          context,
-                          sessionSnapshot,
-                        ) {
-                          if (!sessionSnapshot
-                              .hasData) {
-                            return const SizedBox();
-                          }
-
-                          if (!sessionSnapshot
-                              .data!
-                              .exists) {
-                            return const SizedBox();
-                          }
-
-                          final session =
-                              sessionSnapshot
-                                      .data!
-                                      .data()
-                                  as Map<
-                                    String,
-                                    dynamic
-                                  >;
-
-                          return Card(
-                            margin:
-                                const EdgeInsets.all(
-                                  12,
-                                ),
-
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.all(
-                                    14,
-                                  ),
-
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment
-                                        .start,
-
-                                children: [
-                                  Text(
-                                    "${session['name']} — ${session['instrument']}",
-
-                                    style:
-                                        const TextStyle(
-                                          fontSize:
-                                              18,
-
-                                          fontWeight:
-                                              FontWeight.bold,
-                                        ),
-                                  ),
-
-                                  const SizedBox(
-                                    height:
-                                        8,
-                                  ),
-
-                                  Text(
-                                    "Started: ${formatDateTime(start)}",
-                                  ),
-
-                                  const SizedBox(
-                                    height:
-                                        4,
-                                  ),
-
-                                  Text(
-                                    "Last heartbeat: ${formatDateTime(heartbeat)}",
-                                  ),
-
-                                  const SizedBox(
-                                    height:
-                                        4,
-                                  ),
-
-                                  Text(
-                                    "Firebase document ID: $sessionId",
-
-                                    style:
-                                        const TextStyle(
-                                          fontSize:
-                                              12,
-
-                                          color:
-                                              Colors.grey,
-                                        ),
-                                  ),
-
-                                  const SizedBox(
-                                    height:
-                                        14,
-                                  ),
-
-                                  StaleSessionActions(
-                                    uid:
-                                        uid,
-
-                                    weekId:
-                                        week
-                                            .weekId,
-
-                                    sessionId:
-                                        sessionId,
-
-                                    initialEndTime:
-                                        heartbeat,
-                                  ),
-                                ],
-                              ),
+                              initialEndTime:
+                                  heartbeat,
                             ),
-                          );
-                        },
-                      );
-                    }).toList(),
-              );
-            },
-          ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }).toList(),
+        );
+      },
+    );
+  },
+),
         );
       },
     );

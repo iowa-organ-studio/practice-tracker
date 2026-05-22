@@ -31,19 +31,20 @@ Future<Widget> getStartPage() async {
     return const LoginPage();
   }
 
-  final query = await FirebaseFirestore.instance
-      .collection('users')
-      .where('uid', isEqualTo: uid)
-      .limit(1)
-      .get();
+final snapshot =
+    await FirebaseFirestore
+        .instance
+        .collection('users')
+        .doc(uid)
+        .get();
 
-  if (query.docs.isEmpty) {
+  if (!snapshot.exists) {
     await prefs.clear();
 
     return const LoginPage();
   }
 
-  final user = query.docs.first.data();
+  final user = snapshot.data()!;
 
   final activeDeviceId = user['activeDeviceId'];
 

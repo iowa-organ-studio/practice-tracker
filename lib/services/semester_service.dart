@@ -78,71 +78,19 @@ Future<int> getPracticeMinutesForWeek({
   required SemesterWeek week,
 }) async {
   final snapshot = await FirebaseFirestore.instance
-      .collection('sessions')
-      .where('uid', isEqualTo: uid)
+      .collection('users')
+      .doc(uid)
+      .collection('weeks')
+      .doc(week.weekId)
       .get();
 
-  int totalSeconds = 0;
-
-  for (final doc in snapshot.docs) {
-    final data = doc.data();
-
-    final sessionUid = data['uid'];
-
-    final userQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .where('uid', isEqualTo: sessionUid)
-        .limit(1)
-        .get();
-
-    if (userQuery.docs.isNotEmpty) {
-      final userData = userQuery.docs.first.data();
-
-      if ((userData['role'] ?? 'student') == 'admin') {
-        continue;
-      }
-    }
-
-    final startTime = (data['startTime'] as Timestamp).toDate();
-
-    if (startTime.isBefore(week.start) || startTime.isAfter(week.end)) {
-      continue;
-    }
-
-    final rawTimeline = data['timeline'];
-
-    if (rawTimeline == null || rawTimeline is! List || rawTimeline.isEmpty) {
-      continue;
-    }
-
-    final duration = data['duration'] ?? 0;
-
-    for (int i = 0; i < rawTimeline.length; i++) {
-      final current = rawTimeline[i] as Map<String, dynamic>;
-
-      final currentStart = current['start'] ?? 0;
-
-      final nextStart = i < rawTimeline.length - 1
-          ? rawTimeline[i + 1]['start'] ?? duration
-          : duration;
-
-      final int segmentDuration = (nextStart as int) - (currentStart as int);
-
-      final moving = current['moving'] == true;
-
-      final flagged = current['flagged'] == true;
-
-      final paused = current['paused'] == true;
-
-      final countsAsPractice = !moving && !flagged && !paused;
-
-      if (countsAsPractice) {
-        totalSeconds += segmentDuration;
-      }
-    }
+  if (!snapshot.exists) {
+    return 0;
   }
 
-  return (totalSeconds / 60).round();
+  final data = snapshot.data()!;
+
+  return (data['totalPracticeMinutes'] as int?) ?? 0;
 }
 
 Future<String> getWeekLabelForDate(DateTime date) async {
@@ -163,46 +111,28 @@ Future<String> getWeekLabelForDate(DateTime date) async {
   return "Outside Semester";
 }
 
-Future<String?>
-getTopPracticerUidForWeek({
-  required SemesterWeek week,
-}) async {
-  final usersSnapshot =
-      await FirebaseFirestore
-          .instance
-          .collection('users')
-          .get();
+Future<String?> getTopPracticerUidForWeek({required SemesterWeek week}) async {
+  final usersSnapshot = await FirebaseFirestore.instance
+      .collection('users')
+      .get();
 
   String? topUid;
 
   int topMinutes = -1;
 
-  for (final userDoc
-      in usersSnapshot.docs) {
-    final data =
-        userDoc.data();
+  for (final userDoc in usersSnapshot.docs) {
+    final data = userDoc.data();
 
-    if ((data['role'] ??
-            '') ==
-        'admin') {
+    if ((data['role'] ?? '') == 'admin') {
       continue;
     }
 
-    final uid =
-        userDoc.id;
+    final uid = userDoc.id;
 
-    final minutes =
-        await getWeekPracticeTotal(
-          uid: uid,
+    final minutes = await getWeekPracticeTotal(uid: uid, weekId: week.weekId);
 
-          weekId:
-              week.weekId,
-        );
-
-    if (minutes >
-        topMinutes) {
-      topMinutes =
-          minutes;
+    if (minutes > topMinutes) {
+      topMinutes = minutes;
 
       topUid = uid;
     }
