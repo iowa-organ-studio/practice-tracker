@@ -37,146 +37,168 @@ class SelectionPage extends StatelessWidget {
           }
 
           return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collectionGroup('weeks')
-                .where('weekId', isEqualTo: weekSnapshot.data?.weekId ?? '')
-                .snapshots(),
+            stream: FirebaseFirestore.instance.collection('users').snapshots(),
 
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+            builder: (context, userSnapshot) {
+              if (!userSnapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final now = DateTime.now();
+              final userDocs = userSnapshot.data?.docs ?? [];
 
-              final docs = snapshot.data?.docs ?? [];
+              return FutureBuilder<List<Map<String, dynamic>>>(
+                future: Future.wait(
+                  userDocs.map((userDoc) async {
+                    final weekDoc = await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(userDoc.id)
+                        .collection('weeks')
+                        .doc(week.weekId)
+                        .get();
 
-              final activeCusps = docs.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-
-                final active = data['activeSession'] == true;
-
-                if (!active) {
-                  return false;
-                }
-
-                final heartbeat = data['lastHeartbeat'];
-
-                if (heartbeat == null) {
-                  return false;
-                }
-
-                final heartbeatTime = (heartbeat as Timestamp).toDate();
-
-                return now.difference(heartbeatTime).inMinutes < 5;
-              }).toList();
-
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-
-                  children: builders.map((b) {
-                    bool inUse = false;
-
-                    if (b != 'Other') {
-                      inUse = activeCusps.any((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-
-                        return data['currentOrgan'] == b;
-                      });
+                    if (!weekDoc.exists) {
+                      return {};
                     }
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                    return weekDoc.data()!;
+                  }),
+                ),
 
-                      child: GestureDetector(
-                        onTap: () async {
-                          debugPrint("TAP");
-                          if (inUse) {
-                            final result = await showDialog<bool>(
-                              context: context,
+                builder: (context, cuspSnapshot) {
+                  if (cuspSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                              builder: (_) {
-                                return AlertDialog(
-                                  title: const Text("Organ In Use"),
+                  final cusps = cuspSnapshot.data ?? [];
 
-                                  content: const Text(
-                                    "This organ appears to be in use.\n\nStart session anyway?",
-                                  ),
+                  final now = DateTime.now();
 
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () {
-                                        Navigator.pop(context, false);
-                                      },
+                  final activeCusps = cusps.where((data) {
+                    final active = data['activeSession'] == true;
 
-                                      child: const Text("No"),
-                                    ),
+                    if (!active) {
+                      return false;
+                    }
 
-                                    TextButton(
-                                      onPressed: () {
-                                        Navigator.pop(context, true);
-                                      },
+                    final heartbeat = data['lastHeartbeat'];
 
-                                      child: const Text("Yes"),
-                                    ),
-                                  ],
+                    if (heartbeat == null) {
+                      return false;
+                    }
+
+                    final heartbeatTime = (heartbeat as Timestamp).toDate();
+
+                    return now.difference(heartbeatTime).inMinutes < 5;
+                  }).toList();
+
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+
+                      children: builders.map((b) {
+                        bool inUse = false;
+
+                        if (b != 'Other') {
+                          inUse = activeCusps.any((data) {
+                            return data['currentOrgan'] == b;
+                          });
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+
+                          child: GestureDetector(
+                            onTap: () async {
+                              if (inUse) {
+                                final result = await showDialog<bool>(
+                                  context: context,
+
+                                  builder: (_) {
+                                    return AlertDialog(
+                                      title: const Text("Organ In Use"),
+
+                                      content: const Text(
+                                        "This organ appears to be in use.\n\nStart session anyway?",
+                                      ),
+
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context, false);
+                                          },
+
+                                          child: const Text("No"),
+                                        ),
+
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context, true);
+                                          },
+
+                                          child: const Text("Yes"),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 );
-                              },
-                            );
 
-                            if (result != true) {
-                              return;
-                            }
-                          }
-                          debugPrint("OPENING PRACTICE PAGE");
-                          debugPrint("ABOUT TO NAVIGATE");
-                          await Navigator.pushReplacement(
-                            context,
+                                if (result != true) {
+                                  return;
+                                }
+                              }
 
-                            MaterialPageRoute(
-                              builder: (_) => PracticePage(
-                                instrument: b,
+                              await Navigator.pushReplacement(
+                                context,
 
-                                initiatedOverlap: inUse,
+                                MaterialPageRoute(
+                                  builder: (_) => PracticePage(
+                                    instrument: b,
 
-                                adminMode: adminMode,
+                                    initiatedOverlap: inUse,
+
+                                    adminMode: adminMode,
+                                  ),
+                                ),
+                              );
+                            },
+
+                            child: Opacity(
+                              opacity: inUse ? 0.4 : 1.0,
+
+                              child: Container(
+                                width: 220,
+
+                                padding: const EdgeInsets.all(14),
+
+                                alignment: Alignment.center,
+
+                                decoration: BoxDecoration(
+                                  color: b == 'Other'
+                                      ? const Color(0xFFFFE680)
+                                      : inUse
+                                      ? Colors.grey
+                                      : gold,
+
+                                  border: Border.all(
+                                    color: Colors.black,
+
+                                    width: 2,
+                                  ),
+                                ),
+
+                                child: Text(
+                                  inUse ? "$b (in use)" : b,
+
+                                  style: const TextStyle(color: Colors.black),
+                                ),
                               ),
                             ),
-                          );
-                        },
-
-                        child: Opacity(
-                          opacity: inUse ? 0.4 : 1.0,
-
-                          child: Container(
-                            width: 220,
-
-                            padding: const EdgeInsets.all(14),
-
-                            alignment: Alignment.center,
-
-                            decoration: BoxDecoration(
-                              color: b == 'Other'
-                                  ? const Color(0xFFFFE680)
-                                  : inUse
-                                  ? Colors.grey
-                                  : gold,
-
-                              border: Border.all(color: Colors.black, width: 2),
-                            ),
-
-                            child: Text(
-                              inUse ? "$b (in use)" : b,
-
-                              style: const TextStyle(color: Colors.black),
-                            ),
                           ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                },
               );
             },
           );

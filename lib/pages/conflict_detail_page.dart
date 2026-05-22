@@ -12,81 +12,49 @@ import '../services/conflict_service.dart';
 class ConflictDetailPage extends StatefulWidget {
   final String conflictId;
 
-  const ConflictDetailPage({
-    super.key,
-    required this.conflictId,
-  });
+  const ConflictDetailPage({super.key, required this.conflictId});
 
   @override
-  State<ConflictDetailPage> createState() =>
-      _ConflictDetailPageState();
+  State<ConflictDetailPage> createState() => _ConflictDetailPageState();
 }
 
-class _ConflictDetailPageState
-    extends State<
-      ConflictDetailPage
-    > {
+class _ConflictDetailPageState extends State<ConflictDetailPage> {
   String? winnerSessionId;
 
-  List<Segment> parseTimeline(
-    List<dynamic> raw,
-  ) {
+  List<Segment> parseTimeline(List<dynamic> raw) {
     return raw.map((e) {
-      final map =
-          e as Map<String, dynamic>;
+      final map = e as Map<String, dynamic>;
 
       return Segment(
         map['start'] ?? 0,
 
         map['moving'] ?? false,
 
-        flagged:
-            map['flagged'] ??
-            false,
+        flagged: map['flagged'] ?? false,
 
-        paused:
-            map['paused'] ??
-            false,
+        paused: map['paused'] ?? false,
 
-        resolved:
-            map['resolved'] ??
-            false,
+        resolved: map['resolved'] ?? false,
 
-        fraudulent:
-            map['fraudulent'] ??
-            false,
+        fraudulent: map['fraudulent'] ?? false,
       );
     }).toList();
   }
 
-  Future<int>
-  computePracticeMinutes(
+  Future<int> computePracticeMinutes(
     List<dynamic> rawTimeline,
     int duration,
   ) async {
-    final timeline =
-        parseTimeline(rawTimeline);
+    final timeline = parseTimeline(rawTimeline);
 
     int practice = 0;
 
-    for (
-      int i = 0;
-      i < timeline.length;
-      i++
-    ) {
-      final current =
-          timeline[i];
+    for (int i = 0; i < timeline.length; i++) {
+      final current = timeline[i];
 
-      final end =
-          i <
-                  timeline.length -
-                      1
-              ? timeline[i + 1]
-                  .start
-              : duration;
+      final end = i < timeline.length - 1 ? timeline[i + 1].start : duration;
 
-      final segmentDuration =
-          end - current.start;
+      final segmentDuration = end - current.start;
 
       final legitimate =
           !current.moving &&
@@ -100,150 +68,92 @@ class _ConflictDetailPageState
           !current.paused &&
           !current.moving;
 
-      if (legitimate ||
-          resolvedPractice) {
-        practice +=
-            segmentDuration;
+      if (legitimate || resolvedPractice) {
+        practice += segmentDuration;
       }
     }
 
     return practice;
   }
 
-  Future<void>
-  recomputeWeekTotal({
+  Future<void> recomputeWeekTotal({
     required String uid,
     required String weekId,
   }) async {
-    final sessions =
-        await FirebasePaths
-            .sessionsCollection(
-              uid: uid,
-              weekId: weekId,
-            )
-            .get();
+    final sessions = await FirebasePaths.sessionsCollection(
+      uid: uid,
+      weekId: weekId,
+    ).get();
 
     int total = 0;
 
-    for (final doc
-        in sessions.docs) {
-      final data =
-          doc.data();
+    for (final doc in sessions.docs) {
+      final data = doc.data();
 
-      total +=
-          (data['practiceMinutes']
-                  as int?) ??
-              0;
+      total += (data['practiceMinutes'] as int?) ?? 0;
     }
 
-    await FirebasePaths
-        .weekDoc(
-          uid: uid,
-          weekId: weekId,
-        )
-        .update({
-          'totalPracticeMinutes':
-              total,
-        });
+    await FirebasePaths.weekDoc(
+      uid: uid,
+      weekId: weekId,
+    ).update({'totalPracticeMinutes': total});
   }
 
-  Future<void> resolveWinner(
-    Map<String, dynamic>
-    winnerRef,
-  ) async {
-    final winnerDoc =
-        await FirebasePaths
-            .sessionDoc(
-              uid:
-                  winnerRef['uid'],
+  Future<void> resolveWinner(Map<String, dynamic> winnerRef) async {
+    final winnerDoc = await FirebasePaths.sessionDoc(
+      uid: winnerRef['uid'],
 
-              weekId:
-                  winnerRef['weekId'],
+      weekId: winnerRef['weekId'],
 
-              sessionId:
-                  winnerRef['sessionId'],
-            )
-            .get();
+      sessionId: winnerRef['sessionId'],
+    ).get();
 
-    final data =
-        winnerDoc.data()!;
+    final data = winnerDoc.data()!;
 
-    final timeline =
-        List<Map<String, dynamic>>.from(
-          data['timeline'] ??
-              [],
-        );
+    final timeline = List<Map<String, dynamic>>.from(data['timeline'] ?? []);
 
-    final updatedTimeline =
-        timeline.map((seg) {
-          final flagged =
-              seg['flagged'] ??
-              false;
+    final updatedTimeline = timeline.map((seg) {
+      final flagged = seg['flagged'] ?? false;
 
-          return {
-            ...seg,
+      return {
+        ...seg,
 
-            'flagged':
-                flagged
-                ? false
-                : (seg['flagged'] ??
-                      false),
+        'flagged': flagged ? false : (seg['flagged'] ?? false),
 
-            'resolved':
-                flagged
-                ? true
-                : (seg['resolved'] ??
-                      false),
-          };
-        }).toList();
+        'resolved': flagged ? true : (seg['resolved'] ?? false),
+      };
+    }).toList();
 
-    final duration =
-        data['duration'] ?? 0;
+    final duration = data['duration'] ?? 0;
 
-    final updatedPracticeMinutes =
-        await computePracticeMinutes(
-          updatedTimeline,
-          duration,
-        );
+    final updatedPracticeMinutes = await computePracticeMinutes(
+      updatedTimeline,
+      duration,
+    );
 
-    await FirebasePaths
-        .sessionDoc(
-          uid:
-              winnerRef['uid'],
+    await FirebasePaths.sessionDoc(
+      uid: winnerRef['uid'],
 
-          weekId:
-              winnerRef['weekId'],
+      weekId: winnerRef['weekId'],
 
-          sessionId:
-              winnerRef['sessionId'],
-        )
-        .update({
-          'timeline':
-              updatedTimeline,
+      sessionId: winnerRef['sessionId'],
+    ).update({
+      'timeline': updatedTimeline,
 
-          'practiceMinutes':
-              updatedPracticeMinutes,
-        });
+      'practiceMinutes': updatedPracticeMinutes,
+    });
 
     await recomputeWeekTotal(
       uid: winnerRef['uid'],
-      weekId:
-          winnerRef['weekId'],
+      weekId: winnerRef['weekId'],
     );
 
-    await FirebasePaths
-        .conflictsCollection()
-        .doc(
-          widget.conflictId,
-        )
-        .update({
-          'winnerSessionId':
-              winnerRef['sessionId'],
-        });
+    await FirebasePaths.conflictsCollection().doc(widget.conflictId).update({
+      'winnerSessionId': winnerRef['sessionId'],
+    });
 
     setState(() {
-      winnerSessionId =
-          winnerRef['sessionId'];
+      winnerSessionId = winnerRef['sessionId'];
     });
 
     if (!mounted) return;
@@ -253,9 +163,7 @@ class _ConflictDetailPageState
 
       builder: (_) {
         return AlertDialog(
-          title: const Text(
-            "Practice Restored",
-          ),
+          title: const Text("Practice Restored"),
 
           content: const Text(
             "Resolved practice has been restored to the selected student.",
@@ -264,15 +172,10 @@ class _ConflictDetailPageState
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(
-                  context,
-                );
+                Navigator.pop(context);
               },
 
-              child:
-                  const Text(
-                    "OK",
-                  ),
+              child: const Text("OK"),
             ),
           ],
         );
@@ -280,88 +183,102 @@ class _ConflictDetailPageState
     );
   }
 
-  Future<void>
-  markEntireSessionFraudulent(
-    Map<String, dynamic>
-    loserRef,
-  ) async {
-    final loserDoc =
-        await FirebasePaths
-            .sessionDoc(
-              uid:
-                  loserRef['uid'],
-
-              weekId:
-                  loserRef['weekId'],
-
-              sessionId:
-                  loserRef['sessionId'],
-            )
-            .get();
-
-    final data =
-        loserDoc.data()!;
-
-    final timeline =
-        List<Map<String, dynamic>>.from(
-          data['timeline'] ??
-              [],
-        );
-
-    final updatedTimeline =
-        timeline.map((seg) {
-          return {
-            ...seg,
-
-            'flagged': false,
-
-            'resolved': false,
-
-            'fraudulent':
-                true,
-          };
-        }).toList();
-
-    final updatedPracticeMinutes =
-        await computePracticeMinutes(
-          updatedTimeline,
-          data['duration'] ??
-              0,
-        );
-
-    await FirebasePaths
-        .sessionDoc(
-          uid:
-              loserRef['uid'],
-
-          weekId:
-              loserRef['weekId'],
-
-          sessionId:
-              loserRef['sessionId'],
-        )
-        .update({
-          'timeline':
-              updatedTimeline,
-
-          'practiceMinutes':
-              updatedPracticeMinutes,
-        });
-
-    await recomputeWeekTotal(
+  Future<void> markFlaggedTimeFraudulent(Map<String, dynamic> loserRef) async {
+    final loserDoc = await FirebasePaths.sessionDoc(
       uid: loserRef['uid'],
-      weekId:
-          loserRef['weekId'],
+
+      weekId: loserRef['weekId'],
+
+      sessionId: loserRef['sessionId'],
+    ).get();
+
+    final data = loserDoc.data()!;
+
+    final timeline = List<Map<String, dynamic>>.from(data['timeline'] ?? []);
+
+    final updatedTimeline = timeline.map((seg) {
+      final flagged = seg['flagged'] ?? false;
+
+      return {
+        ...seg,
+
+        'flagged': flagged ? false : (seg['flagged'] ?? false),
+
+        'resolved': false,
+
+        'fraudulent': flagged ? true : false,
+      };
+    }).toList();
+
+    final updatedPracticeMinutes = await computePracticeMinutes(
+      updatedTimeline,
+      data['duration'] ?? 0,
     );
 
-    await FirebasePaths
-        .conflictsCollection()
-        .doc(
-          widget.conflictId,
-        )
-        .update({
-          'resolved': true,
-        });
+    await FirebasePaths.sessionDoc(
+      uid: loserRef['uid'],
+
+      weekId: loserRef['weekId'],
+
+      sessionId: loserRef['sessionId'],
+    ).update({
+      'timeline': updatedTimeline,
+
+      'practiceMinutes': updatedPracticeMinutes,
+    });
+
+    await recomputeWeekTotal(uid: loserRef['uid'], weekId: loserRef['weekId']);
+
+    await FirebasePaths.conflictsCollection().doc(widget.conflictId).update({
+      'resolved': true,
+    });
+
+    if (!mounted) return;
+
+    Navigator.pop(context);
+  }
+
+  Future<void> markEntireSessionFraudulent(
+    Map<String, dynamic> loserRef,
+  ) async {
+    final loserDoc = await FirebasePaths.sessionDoc(
+      uid: loserRef['uid'],
+
+      weekId: loserRef['weekId'],
+
+      sessionId: loserRef['sessionId'],
+    ).get();
+
+    final data = loserDoc.data()!;
+
+    final timeline = List<Map<String, dynamic>>.from(data['timeline'] ?? []);
+
+    final updatedTimeline = timeline.map((seg) {
+      return {...seg, 'flagged': false, 'resolved': false, 'fraudulent': true};
+    }).toList();
+
+    final updatedPracticeMinutes = await computePracticeMinutes(
+      updatedTimeline,
+      data['duration'] ?? 0,
+    );
+
+    await FirebasePaths.sessionDoc(
+      uid: loserRef['uid'],
+
+      weekId: loserRef['weekId'],
+
+      sessionId: loserRef['sessionId'],
+    ).update({
+      'timeline': updatedTimeline,
+
+      'practiceMinutes': updatedPracticeMinutes,
+    });
+
+    await recomputeWeekTotal(uid: loserRef['uid'], weekId: loserRef['weekId']);
+
+    await FirebasePaths.conflictsCollection().doc(widget.conflictId).update({
+      'resolved': true,
+    });
 
     if (!mounted) return;
 
@@ -369,379 +286,226 @@ class _ConflictDetailPageState
   }
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "Conflict Detail",
-        ),
-      ),
+      appBar: AppBar(title: const Text("Conflict Detail")),
 
-      body:
-          FutureBuilder<
-            DocumentSnapshot
-          >(
-            future:
-                FirebasePaths
-                    .conflictsCollection()
-                    .doc(
-                      widget
-                          .conflictId,
-                    )
-                    .get(),
+      body: FutureBuilder<DocumentSnapshot>(
+        future: FirebasePaths.conflictsCollection()
+            .doc(widget.conflictId)
+            .get(),
 
-            builder: (
-              context,
-              conflictSnapshot,
-            ) {
-              if (!conflictSnapshot
-                  .hasData) {
-                return const Center(
-                  child:
-                      CircularProgressIndicator(),
-                );
+        builder: (context, conflictSnapshot) {
+          if (!conflictSnapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final conflict =
+              conflictSnapshot.data!.data() as Map<String, dynamic>;
+
+          final sessionRefs = List<Map<String, dynamic>>.from(
+            conflict['sessionRefs'] ?? [],
+          );
+
+          return FutureBuilder<List<DocumentSnapshot>>(
+            future: loadConflictSessions(sessionRefs),
+
+            builder: (context, sessionSnapshot) {
+              if (!sessionSnapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
               }
 
-              final conflict =
-                  conflictSnapshot
-                          .data!
-                          .data()
-                      as Map<
-                        String,
-                        dynamic
-                      >;
+              final sessions = sessionSnapshot.data!;
 
-              final sessionRefs =
-                  List<
-                    Map<
-                      String,
-                      dynamic
-                    >
-                  >.from(
-                    conflict['sessionRefs'] ??
-                        [],
-                  );
+              sessions.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
 
-              return FutureBuilder<
-                List<
-                  DocumentSnapshot
-                >
-              >(
-                future:
-                    loadConflictSessions(
-                      sessionRefs,
+                final bData = b.data() as Map<String, dynamic>;
+
+                final aStart = (aData['startTime'] as Timestamp).toDate();
+
+                final bStart = (bData['startTime'] as Timestamp).toDate();
+
+                return aStart.compareTo(bStart);
+              });
+
+              return ListView(
+                children: [
+                  ...sessions.map((s) {
+                    final data = s.data() as Map<String, dynamic>;
+
+                    final timeline = parseTimeline(data['timeline'] ?? []);
+
+                    final duration = data['duration'] ?? 0;
+
+                    final start = (data['startTime'] as Timestamp).toDate();
+
+                    return Padding(
+                      padding: const EdgeInsets.all(12),
+
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+
+                        children: [
+                          Text(
+                            "${data['name']} — ${data['instrument']}",
+
+                            style: const TextStyle(
+                              fontSize: 18,
+
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          SizedBox(
+                            height: 84,
+
+                            child: CustomPaint(
+                              size: Size.infinite,
+
+                              painter: GraphPainter(
+                                timeline,
+
+                                duration,
+
+                                start,
+
+                                fixedThreeHourScale: true,
+                              ),
+                            ),
+                          ),
+
+                          Text(
+                            "Firebase document ID: ${s.id}",
+
+                            style: const TextStyle(
+                              fontSize: 12,
+
+                              color: Colors.grey,
+                            ),
+                          ),
+
+                          const SizedBox(height: 18),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 10),
+
+                  if (winnerSessionId == null) ...[
+                    const Center(
+                      child: Text(
+                        "Winner?",
+
+                        style: TextStyle(
+                          fontSize: 18,
+
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
 
-                builder: (
-                  context,
-                  sessionSnapshot,
-                ) {
-                  if (!sessionSnapshot
-                      .hasData) {
-                    return const Center(
-                      child:
-                          CircularProgressIndicator(),
-                    );
-                  }
+                    const SizedBox(height: 12),
 
-                  final sessions =
-                      sessionSnapshot
-                          .data!;
+                    ...sessionRefs.map((ref) {
+                      final session = sessions.firstWhere(
+                        (s) => s.id == ref['sessionId'],
+                      );
 
-                  sessions.sort((
-                    a,
-                    b,
-                  ) {
-                    final aData =
-                        a.data()
-                            as Map<
-                              String,
-                              dynamic
-                            >;
+                      final data = session.data() as Map<String, dynamic>;
 
-                    final bData =
-                        b.data()
-                            as Map<
-                              String,
-                              dynamic
-                            >;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
 
-                    final aStart =
-                        (aData['startTime']
-                                as Timestamp)
-                            .toDate();
-
-                    final bStart =
-                        (bData['startTime']
-                                as Timestamp)
-                            .toDate();
-
-                    return aStart
-                        .compareTo(
-                          bStart,
-                        );
-                  });
-
-                  return ListView(
-                    children: [
-                      ...sessions.map((
-                        s,
-                      ) {
-                        final data =
-                            s.data()
-                                as Map<
-                                  String,
-                                  dynamic
-                                >;
-
-                        final timeline =
-                            parseTimeline(
-                              data['timeline'] ??
-                                  [],
-                            );
-
-                        final duration =
-                            data['duration'] ??
-                            0;
-
-                        final start =
-                            (data['startTime']
-                                    as Timestamp)
-                                .toDate();
-
-                        return Padding(
-                          padding:
-                              const EdgeInsets.all(
-                                12,
-                              ),
-
-                          child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
-
-                            children: [
-                              Text(
-                                "${data['name']} — ${data['instrument']}",
-
-                                style:
-                                    const TextStyle(
-                                      fontSize:
-                                          18,
-
-                                      fontWeight:
-                                          FontWeight.bold,
-                                    ),
-                              ),
-
-                              const SizedBox(
-                                height:
-                                    8,
-                              ),
-
-                              SizedBox(
-                                height:
-                                    84,
-
-                                child:
-                                    CustomPaint(
-                                      size:
-                                          Size.infinite,
-
-                                      painter:
-                                          GraphPainter(
-                                            timeline,
-
-                                            duration,
-
-                                            start,
-
-                                            fixedThreeHourScale:
-                                                true,
-                                          ),
-                                    ),
-                              ),
-
-                              Text(
-                                "Firebase document ID: ${s.id}",
-
-                                style:
-                                    const TextStyle(
-                                      fontSize:
-                                          12,
-
-                                      color:
-                                          Colors.grey,
-                                    ),
-                              ),
-
-                              const SizedBox(
-                                height:
-                                    18,
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-
-                      const SizedBox(
-                        height: 10,
-                      ),
-
-                      if (winnerSessionId ==
-                          null) ...[
-                        const Center(
-                          child: Text(
-                            "Winner?",
-
-                            style:
-                                TextStyle(
-                                  fontSize:
-                                      18,
-
-                                  fontWeight:
-                                      FontWeight.bold,
-                                ),
-                          ),
+                          vertical: 6,
                         ),
 
-                        const SizedBox(
-                          height: 12,
-                        ),
-
-                        ...sessionRefs.map((
-                          ref,
-                        ) {
-                          final session =
-                              sessions.firstWhere(
-                                (
-                                  s,
-                                ) =>
-                                    s.id ==
-                                    ref['sessionId'],
-                              );
-
-                          final data =
-                              session.data()
-                                  as Map<
-                                    String,
-                                    dynamic
-                                  >;
-
-                          return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(
-                                  horizontal:
-                                      24,
-
-                                  vertical:
-                                      6,
-                                ),
-
-                            child:
-                                ElevatedButton(
-                                  onPressed:
-                                      () {
-                                        resolveWinner(
-                                          ref,
-                                        );
-                                      },
-
-                                  child:
-                                      Text(
-                                        data['name'],
-                                      ),
-                                ),
-                          );
-                        }),
-                      ] else ...[
-                        Builder(
-                          builder: (_) {
-                            final loserRef =
-                                sessionRefs.firstWhere(
-                                  (
-                                    ref,
-                                  ) =>
-                                      ref['sessionId'] !=
-                                      winnerSessionId,
-                                );
-
-                            final loserSession =
-                                sessions.firstWhere(
-                                  (
-                                    s,
-                                  ) =>
-                                      s.id ==
-                                      loserRef['sessionId'],
-                                );
-
-                            final loserData =
-                                loserSession.data()
-                                    as Map<
-                                      String,
-                                      dynamic
-                                    >;
-
-                            return Column(
-                              children: [
-                                const SizedBox(
-                                  height:
-                                      12,
-                                ),
-
-                                Text(
-                                  "${loserData['name']} — ${loserData['instrument']}",
-
-                                  style:
-                                      const TextStyle(
-                                        fontSize:
-                                            18,
-
-                                        fontWeight:
-                                            FontWeight.bold,
-                                      ),
-                                ),
-
-                                const SizedBox(
-                                  height:
-                                      16,
-                                ),
-
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(
-                                        horizontal:
-                                            24,
-                                      ),
-
-                                  child:
-                                      ElevatedButton(
-                                        onPressed:
-                                            () {
-                                              markEntireSessionFraudulent(
-                                                loserRef,
-                                              );
-                                            },
-
-                                        child:
-                                            const Text(
-                                              "Label entire session as fraudulent",
-                                            ),
-                                      ),
-                                ),
-                              ],
-                            );
+                        child: ElevatedButton(
+                          onPressed: () {
+                            resolveWinner(ref);
                           },
+
+                          child: Text(data['name']),
                         ),
-                      ],
-                    ],
-                  );
-                },
+                      );
+                    }),
+                  ] else ...[
+                    Builder(
+                      builder: (_) {
+                        final loserRef = sessionRefs.firstWhere(
+                          (ref) => ref['sessionId'] != winnerSessionId,
+                        );
+
+                        final loserSession = sessions.firstWhere(
+                          (s) => s.id == loserRef['sessionId'],
+                        );
+
+                        final loserData =
+                            loserSession.data() as Map<String, dynamic>;
+
+                        return Column(
+                          children: [
+                            const SizedBox(height: 12),
+
+                            Text(
+                              "${loserData['name']} — ${loserData['instrument']}",
+
+                              style: const TextStyle(
+                                fontSize: 18,
+
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  markEntireSessionFraudulent(loserRef);
+                                },
+
+                                child: const Text(
+                                  "Label entire session as fraudulent",
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  markFlaggedTimeFraudulent(loserRef);
+                                },
+
+                                child: const Text(
+                                  "Label only flagged minutes as fraudulent",
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ],
               );
             },
-          ),
+          );
+        },
+      ),
     );
   }
 }

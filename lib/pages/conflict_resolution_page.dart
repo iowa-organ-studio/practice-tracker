@@ -72,11 +72,15 @@ class ConflictResolutionPage extends StatelessWidget {
           for (final doc in docs) {
             final data = doc.data() as Map<String, dynamic>;
 
-            final sessionIds = List<String>.from(data['sessionIds'] ?? []);
+            final sessionRefs = List<Map<String, dynamic>>.from(
+              data['sessionRefs'] ?? [],
+            );
 
-            sessionIds.sort();
+            final normalized =
+                sessionRefs.map((e) => "${e['uid']}_${e['sessionId']}").toList()
+                  ..sort();
 
-            final key = "${data['organ']}_${sessionIds.join('_')}";
+            final key = "${data['organ']}_${normalized.join('_')}";
 
             groupedConflicts[key] = doc;
           }
@@ -92,15 +96,13 @@ class ConflictResolutionPage extends StatelessWidget {
             );
           }
 
-          
-
           return ListView.builder(
             itemCount: uniqueDocs.length,
 
             itemBuilder: (context, index) {
               final conflict = uniqueDocs[index].data() as Map<String, dynamic>;
 
-              final names = List<String>.from(conflict['names'] ?? []);
+              final uids = List<String>.from(conflict['uids'] ?? []);
 
               final createdAt = (conflict['createdAt'] as Timestamp).toDate();
 
@@ -150,11 +152,11 @@ class ConflictResolutionPage extends StatelessWidget {
 
                         const SizedBox(height: 4),
 
-                        ...names.map(
-                          (n) => Padding(
+                        ...uids.map(
+                          (u) => Padding(
                             padding: const EdgeInsets.only(left: 8, top: 2),
 
-                            child: Text("• $n"),
+                            child: Text("• $u"),
                           ),
                         ),
                       ],

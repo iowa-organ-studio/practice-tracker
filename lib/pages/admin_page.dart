@@ -208,14 +208,13 @@ class _AdminPageState extends State<AdminPage> {
                               return const Text("Remove Stale Sessions");
                             }
 
-                            return FutureBuilder<QuerySnapshot>(
-                              future: FirebaseFirestore.instance
+                            return StreamBuilder<QuerySnapshot>(
+                              stream: FirebaseFirestore.instance
                                   .collection('users')
-                                  .get(),
+                                  .snapshots(),
 
                               builder: (context, userSnapshot) {
-                                if (userSnapshot.connectionState ==
-                                    ConnectionState.waiting) {
+                                if (!userSnapshot.hasData) {
                                   return const Text("Remove Stale Sessions");
                                 }
 

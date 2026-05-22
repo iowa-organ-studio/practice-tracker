@@ -131,7 +131,7 @@ Future<String?> getTopPracticerUidForWeek({required SemesterWeek week}) async {
 
     final minutes = await getWeekPracticeTotal(uid: uid, weekId: week.weekId);
 
-    if (minutes > topMinutes) {
+    if (minutes > topMinutes && minutes > 0) {
       topMinutes = minutes;
 
       topUid = uid;
