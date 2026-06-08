@@ -30,10 +30,7 @@ class StaleSessionsPage extends StatelessWidget {
 
     final m = d.minute.toString().padLeft(2, '0');
 
-    final suffix =
-        d.hour >= 12
-        ? 'pm'
-        : 'am';
+    final suffix = d.hour >= 12 ? 'pm' : 'am';
 
     return "${d.day} "
         "${months[d.month - 1]} "
@@ -46,328 +43,195 @@ class StaleSessionsPage extends StatelessWidget {
     return FutureBuilder<WeekInfo?>(
       future: getCurrentWeekInfo(),
 
-      builder: (
-        context,
-        weekSnapshot,
-      ) {
-        if (!weekSnapshot
-            .hasData) {
+      builder: (context, weekSnapshot) {
+        if (!weekSnapshot.hasData) {
           return const Scaffold(
-            body: Center(
-              child:
-                  CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final week =
-            weekSnapshot.data;
+        final week = weekSnapshot.data;
 
         if (week == null) {
-          return const Scaffold(
-            body: Center(
-              child: Text(
-                "No active week",
-              ),
-            ),
-          );
+          return const Scaffold(body: Center(child: Text("No active week")));
         }
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text(
-              "Stale Sessions",
-            ),
-          ),
+          appBar: AppBar(title: const Text("Stale Sessions")),
 
           body: FutureBuilder<QuerySnapshot>(
-  future:
-      FirebaseFirestore
-          .instance
-          .collection('users')
-          .get(),
+            future: FirebaseFirestore.instance.collection('users').get(),
 
-  builder: (
-    context,
-    userSnapshot,
-  ) {
-    if (userSnapshot
-            .connectionState ==
-        ConnectionState.waiting) {
-      return const Center(
-        child:
-            CircularProgressIndicator(),
-      );
-    }
-
-    final userDocs =
-        userSnapshot.data?.docs ??
-        [];
-
-    return FutureBuilder<
-      List<
-        Map<String, dynamic>
-      >
-    >(
-      future: Future.wait(
-        userDocs.map((
-          userDoc,
-        ) async {
-          final weekDoc =
-              await FirebaseFirestore
-                  .instance
-                  .collection(
-                    'users',
-                  )
-                  .doc(
-                    userDoc.id,
-                  )
-                  .collection(
-                    'weeks',
-                  )
-                  .doc(
-                    week.weekId,
-                  )
-                  .get();
-
-          if (!weekDoc.exists) {
-            return {};
-          }
-
-          return {
-            'uid': userDoc.id,
-
-            'week':
-                weekDoc.data(),
-          };
-        }),
-      ),
-
-      builder: (
-        context,
-        cuspSnapshot,
-      ) {
-        if (cuspSnapshot
-                .connectionState ==
-            ConnectionState.waiting) {
-          return const Center(
-            child:
-                CircularProgressIndicator(),
-          );
-        }
-
-        final cuspData =
-            cuspSnapshot.data ??
-            [];
-
-        final now =
-            DateTime.now();
-
-        final staleCusps =
-            cuspData.where((
-              entry,
-            ) {
-              if (entry.isEmpty) {
-                return false;
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
               }
 
-              final data =
-                  entry['week']
-                      as Map<
-                        String,
-                        dynamic
-                      >;
+              final userDocs = userSnapshot.data?.docs ?? [];
 
-              final active =
-                  data['activeSession'] ==
-                  true;
+              return FutureBuilder<List<Map<String, dynamic>>>(
+                future: Future.wait(
+                  userDocs.map((userDoc) async {
+                    final weekDoc = await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(userDoc.id)
+                        .collection('weeks')
+                        .doc(week.weekId)
+                        .get();
 
-              if (!active) {
-                return false;
-              }
-
-              final heartbeat =
-                  data['lastHeartbeat'];
-
-              if (heartbeat ==
-                  null) {
-                return true;
-              }
-
-              final heartbeatTime =
-                  (heartbeat
-                          as Timestamp)
-                      .toDate();
-
-              return now
-                      .difference(
-                        heartbeatTime,
-                      )
-                      .inMinutes >
-                  10;
-            }).toList();
-
-        if (staleCusps
-            .isEmpty) {
-          return const Center(
-            child: Text(
-              "No stale sessions",
-            ),
-          );
-        }
-
-        return ListView(
-          children:
-              staleCusps.map((
-                entry,
-              ) {
-                final uid =
-                    entry['uid'];
-
-                final data =
-                    entry['week']
-                        as Map<
-                          String,
-                          dynamic
-                        >;
-
-                final sessionId =
-                    data['currentSessionId'];
-
-                final heartbeat =
-                    (data['lastHeartbeat']
-                            as Timestamp)
-                        .toDate();
-
-                return FutureBuilder<
-                  DocumentSnapshot
-                >(
-                  future:
-                      FirebasePaths.sessionDoc(
-                        uid: uid,
-
-                        weekId:
-                            week.weekId,
-
-                        sessionId:
-                            sessionId,
-                      ).get(),
-
-                  builder: (
-                    context,
-                    sessionSnapshot,
-                  ) {
-                    if (!sessionSnapshot
-                        .hasData) {
-                      return const SizedBox();
+                    if (!weekDoc.exists) {
+                      return {};
                     }
 
-                    if (!sessionSnapshot
-                        .data!
-                        .exists) {
-                      return const SizedBox();
+                    return {'uid': userDoc.id, 'week': weekDoc.data()};
+                  }),
+                ),
+
+                builder: (context, cuspSnapshot) {
+                  if (cuspSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final cuspData = cuspSnapshot.data ?? [];
+
+                  final now = DateTime.now();
+
+                  final staleCusps = cuspData.where((entry) {
+                    if (entry.isEmpty) {
+                      return false;
                     }
 
-                    final session =
-                        sessionSnapshot
-                                .data!
-                                .data()
-                            as Map<
-                              String,
-                              dynamic
-                            >;
+                    final data = entry['week'] as Map<String, dynamic>;
 
-                    final start =
-                        (session['startTime']
-                                as Timestamp)
-                            .toDate();
+                    final active = data['activeSession'] == true;
 
-                    return Card(
-                      margin:
-                          const EdgeInsets.all(
-                            12,
-                          ),
+                    if (!active) {
+                      return false;
+                    }
 
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.all(
-                              14,
-                            ),
+                    final heartbeat = data['lastHeartbeat'];
 
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment
-                                  .start,
+                    if (heartbeat == null) {
+                      return true;
+                    }
 
-                          children: [
-                            Text(
-                              "${session['name']} — ${session['instrument']}",
+                    final heartbeatTime = (heartbeat as Timestamp).toDate();
 
-                              style:
-                                  const TextStyle(
-                                    fontSize:
-                                        18,
+                    return now.difference(heartbeatTime).inMinutes > 10;
+                  }).toList();
 
-                                    fontWeight:
-                                        FontWeight.bold,
+                  if (staleCusps.isEmpty) {
+                    return const Center(child: Text("No stale sessions"));
+                  }
+
+                  return ListView(
+                    children: staleCusps.map((entry) {
+                      final uid = entry['uid'];
+
+                      final data = entry['week'] as Map<String, dynamic>;
+
+                      final sessionId = data['currentSessionId'];
+
+                      final heartbeat = (data['lastHeartbeat'] as Timestamp)
+                          .toDate();
+
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: FirebasePaths.sessionDoc(
+                          uid: uid,
+
+                          weekId: week.weekId,
+
+                          sessionId: sessionId,
+                        ).get(),
+
+                        builder: (context, sessionSnapshot) {
+                          if (!sessionSnapshot.hasData) {
+                            return const SizedBox();
+                          }
+
+                          if (!sessionSnapshot.data!.exists) {
+                            return const SizedBox();
+                          }
+
+                          final session =
+                              sessionSnapshot.data!.data()
+                                  as Map<String, dynamic>;
+
+                          final studentReported =
+                              session['studentReportedEndTime'];
+
+                          final start = (session['startTime'] as Timestamp)
+                              .toDate();
+
+                          return Card(
+                            margin: const EdgeInsets.all(12),
+
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+
+                                children: [
+                                  Text(
+                                    "${session['name']} — ${session['instrument']}",
+
+                                    style: const TextStyle(
+                                      fontSize: 18,
+
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
+
+                                  const SizedBox(height: 8),
+
+                                  Text("Started: ${formatDateTime(start)}"),
+
+                                  const SizedBox(height: 4),
+
+                                  Text(
+                                    "Last heartbeat: ${formatDateTime(heartbeat)}",
+                                  ),
+
+                                  if (studentReported != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+
+                                      child: Text(
+                                        "Student reported: ${formatDateTime((studentReported as Timestamp).toDate())}",
+                                      ),
+                                    ),
+
+                                  const SizedBox(height: 14),
+
+                                  StaleSessionActions(
+                                    uid: uid,
+
+                                    weekId: week.weekId,
+
+                                    sessionId: sessionId,
+
+                                    initialEndTime: heartbeat,
+                                  ),
+                                ],
+                              ),
                             ),
-
-                            const SizedBox(
-                              height:
-                                  8,
-                            ),
-
-                            Text(
-                              "Started: ${formatDateTime(start)}",
-                            ),
-
-                            const SizedBox(
-                              height:
-                                  4,
-                            ),
-
-                            Text(
-                              "Last heartbeat: ${formatDateTime(heartbeat)}",
-                            ),
-
-                            const SizedBox(
-                              height:
-                                  14,
-                            ),
-
-                            StaleSessionActions(
-                              uid: uid,
-
-                              weekId:
-                                  week.weekId,
-
-                              sessionId:
-                                  sessionId,
-
-                              initialEndTime:
-                                  heartbeat,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }).toList(),
-        );
-      },
-    );
-  },
-),
+                          );
+                        },
+                      );
+                    }).toList(),
+                  );
+                },
+              );
+            },
+          ),
         );
       },
     );
   }
 }
 
-class StaleSessionActions
-    extends StatefulWidget {
+class StaleSessionActions extends StatefulWidget {
   final String uid;
 
   final String weekId;
@@ -385,95 +249,76 @@ class StaleSessionActions
   });
 
   @override
-  State<StaleSessionActions>
-  createState() =>
-      _StaleSessionActionsState();
+  State<StaleSessionActions> createState() => _StaleSessionActionsState();
 }
 
-class _StaleSessionActionsState
-    extends State<
-      StaleSessionActions
-    > {
-  final TextEditingController
-  controller =
-      TextEditingController();
+class _StaleSessionActionsState extends State<StaleSessionActions> {
+  final TextEditingController controller = TextEditingController();
 
   @override
   void initState() {
     super.initState();
 
-    controller.text =
-        DateFormat(
-          'yyyy-MM-dd HH:mm',
-        ).format(
-          widget.initialEndTime,
-        );
+    controller.text = DateFormat(
+      'yyyy-MM-dd HH:mm',
+    ).format(widget.initialEndTime);
   }
 
-  Future<void> createEndTime()
-  async {
+  Future<void> createEndTime() async {
     try {
-      final parsed =
-          DateFormat(
-            'yyyy-MM-dd HH:mm',
-          ).parse(
-            controller.text,
-          );
+      final parsed = DateFormat('yyyy-MM-dd HH:mm').parse(controller.text);
 
-      await FirebasePaths
-          .sessionDoc(
-            uid: widget.uid,
+      final session = await FirebasePaths.sessionDoc(
+        uid: widget.uid,
 
-            weekId:
-                widget.weekId,
+        weekId: widget.weekId,
 
-            sessionId:
-                widget.sessionId,
-          )
-          .update({
-            'endTime':
-                parsed,
-          });
+        sessionId: widget.sessionId,
+      ).get();
 
-      await FirebasePaths
-          .weekDoc(
-            uid: widget.uid,
+      final data = session.data()!;
 
-            weekId:
-                widget.weekId,
-          )
-          .update({
-            'activeSession':
-                false,
+      // deleted due to new stale session logic final timeline = List<Map<String, dynamic>>.from(data['timeline'] ?? []);
 
-            'currentOrgan':
-                null,
+      final startTime = (data['startTime'] as Timestamp).toDate();
 
-            'currentSessionId':
-                null,
-          });
+      final inferredDuration = parsed.difference(startTime).inSeconds;
+
+      await FirebasePaths.sessionDoc(
+        uid: widget.uid,
+
+        weekId: widget.weekId,
+
+        sessionId: widget.sessionId,
+      ).update({
+        'endTime': parsed,
+
+        'duration': inferredDuration,
+
+        'staleReviewed': true,
+      });
+
+      await FirebasePaths.weekDoc(
+        uid: widget.uid,
+
+        weekId: widget.weekId,
+      ).update({
+        'activeSession': false,
+
+        'currentOrgan': null,
+
+        'currentSessionId': null,
+      });
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "End Time added to session",
-          ),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("End Time added to session")),
       );
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Invalid date format",
-          ),
-        ),
-      );
+      ).showSnackBar(const SnackBar(content: Text("Invalid date format")));
     }
   }
 
@@ -482,30 +327,89 @@ class _StaleSessionActionsState
     return Column(
       children: [
         TextField(
-          controller:
-              controller,
+          controller: controller,
 
-          decoration:
-              const InputDecoration(
-                labelText:
-                    'Create end time',
+          decoration: const InputDecoration(
+            labelText: 'Create end time',
 
-                hintText:
-                    'yyyy-MM-dd HH:mm',
-              ),
-        ),
-
-        const SizedBox(
-          height: 12,
-        ),
-
-        ElevatedButton(
-          onPressed:
-              createEndTime,
-
-          child: const Text(
-            "Create End Time",
+            hintText: 'yyyy-MM-dd HH:mm',
           ),
+        ),
+
+        const SizedBox(height: 12),
+
+        Column(
+          children: [
+            ElevatedButton(
+              onPressed: createEndTime,
+
+              child: const Text("Use Last Recorded"),
+            ),
+
+            const SizedBox(height: 10),
+
+            ElevatedButton(
+              onPressed: () async {
+                final session = await FirebasePaths.sessionDoc(
+                  uid: widget.uid,
+
+                  weekId: widget.weekId,
+
+                  sessionId: widget.sessionId,
+                ).get();
+
+                final data = session.data()!;
+
+                final reported = data['studentReportedEndTime'];
+
+                if (reported == null) {
+                  if (!mounted) {
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("No student-reported ending time"),
+                    ),
+                  );
+
+                  return;
+                }
+
+                await FirebasePaths.sessionDoc(
+                  uid: widget.uid,
+
+                  weekId: widget.weekId,
+
+                  sessionId: widget.sessionId,
+                ).update({'endTime': reported, 'staleReviewed': true});
+
+                await FirebasePaths.weekDoc(
+                  uid: widget.uid,
+
+                  weekId: widget.weekId,
+                ).update({
+                  'activeSession': false,
+
+                  'currentOrgan': null,
+
+                  'currentSessionId': null,
+                });
+
+                if (!mounted) {
+                  return;
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Student-reported ending time applied"),
+                  ),
+                );
+              },
+
+              child: const Text("Use Student Reported"),
+            ),
+          ],
         ),
       ],
     );

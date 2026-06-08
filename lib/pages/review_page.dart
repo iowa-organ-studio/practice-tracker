@@ -398,15 +398,96 @@ class ReviewPage extends StatelessWidget {
                                             ),
                                           ),
 
-                                          if (s['endTime'] == null)
-                                            const Text(
-                                              "(incomplete session)",
+                                          if (s['endTime'] == null &&
+                                              s['staleReviewed'] != true)
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
 
-                                              style: TextStyle(
-                                                color: Colors.red,
-                                                fontSize: 12,
-                                                fontStyle: FontStyle.italic,
-                                              ),
+                                              children: [
+                                                const Text(
+                                                  "(incomplete session)",
+
+                                                  style: TextStyle(
+                                                    color: Colors.red,
+                                                    fontSize: 12,
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                ),
+
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    final selected =
+                                                        await showDatePicker(
+                                                          context: context,
+
+                                                          initialDate:
+                                                              DateTime.now(),
+
+                                                          firstDate:
+                                                              (s['startTime']
+                                                                      as Timestamp)
+                                                                  .toDate(),
+
+                                                          lastDate:
+                                                              (s['startTime']
+                                                                      as Timestamp)
+                                                                  .toDate()
+                                                                  .add(
+                                                                    const Duration(
+                                                                      hours: 3,
+                                                                    ),
+                                                                  ),
+                                                        );
+
+                                                    if (selected == null) {
+                                                      return;
+                                                    }
+
+                                                    if (!context.mounted) {
+                                                      return;
+                                                    }
+
+                                                    final pickedTime =
+                                                        await showTimePicker(
+                                                          context: context,
+
+                                                          initialTime:
+                                                              TimeOfDay.now(),
+                                                        );
+
+                                                    if (pickedTime == null) {
+                                                      return;
+                                                    }
+
+                                                    final finalDateTime =
+                                                        DateTime(
+                                                          selected.year,
+                                                          selected.month,
+                                                          selected.day,
+                                                          pickedTime.hour,
+                                                          pickedTime.minute,
+                                                        );
+
+                                                    await FirebaseFirestore
+                                                        .instance
+                                                        .collection('users')
+                                                        .doc(currentUid)
+                                                        .collection('weeks')
+                                                        .doc(doc.weekId)
+                                                        .collection('sessions')
+                                                        .doc(doc.sessionId)
+                                                        .update({
+                                                          'studentReportedEndTime':
+                                                              finalDateTime,
+                                                        });
+                                                  },
+
+                                                  child: const Text(
+                                                    "Report actual ending time",
+                                                  ),
+                                                ),
+                                              ],
                                             ),
 
                                           if (s['endedOffline'] == true)
