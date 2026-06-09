@@ -19,7 +19,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'stale_sessions_page.dart';
 
 import 'selection_page.dart';
-
+import '../login_page.dart';
 import 'review_page.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -378,6 +378,46 @@ class _AdminPageState extends State<AdminPage> {
                             child: const Text("Review Sessions"),
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(260, 50),
+                        ),
+
+                        onPressed: () async {
+                          final prefs = await SharedPreferences.getInstance();
+
+                          final uid = prefs.getString('uid');
+
+                          if (uid != null) {
+                            await FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(uid)
+                                .update({
+                                  'activeDeviceId': null,
+                                  'lastDeviceHeartbeat': null,
+                                });
+                          }
+
+                          await prefs.clear();
+
+                          if (!mounted) return;
+
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LoginPage(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+
+                        child: const Text("LOGOUT"),
                       ),
                     ],
                   ),

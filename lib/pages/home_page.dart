@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/user_service.dart';
+import '../login_page.dart';
 import 'selection_page.dart';
 import 'review_page.dart';
 import '../theme/app_colors.dart';
@@ -66,13 +67,16 @@ class _HomePageState extends State<HomePage> {
       if (now.isAfter(week.end)) {
         topUid = await getTopPracticerUidForWeek(week: week);
       }
-      final minutes = await getWeekPracticeTotal(uid: uid, weekId: week.weekId);
+      final seconds = await getWeekPracticeTotal(
+  uid: uid,
+  weekId: week.weekId,
+);
 
       final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
 
       final status = computeWeekStatus(
         week: week,
-        practicedMinutes: minutes,
+        practicedSeconds: seconds,
         minimumMinutes: minimumMinutes,
         isCurrentWeek: isCurrentWeek,
         isTopPracticer: uid == topUid,
@@ -468,6 +472,42 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
               ],
+            ),
+
+            const SizedBox(height: 20),
+
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(260, 50),
+              ),
+              onPressed: () async {
+                final prefs = await SharedPreferences.getInstance();
+
+                final uid = prefs.getString('uid');
+
+                if (uid != null) {
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .update({
+                        'activeDeviceId': null,
+                        'lastDeviceHeartbeat': null,
+                      });
+                }
+
+                await prefs.clear();
+
+                if (!mounted) return;
+
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                  (route) => false,
+                );
+              },
+              child: const Text("LOGOUT"),
             ),
 
             const SizedBox(height: 24),

@@ -40,7 +40,7 @@ Future<Semester?> getActiveSemester() async {
 WeekStatus computeWeekStatus({
   required SemesterWeek week,
 
-  required int practicedMinutes,
+  required int practicedSeconds,
 
   required int minimumMinutes,
 
@@ -62,9 +62,9 @@ WeekStatus computeWeekStatus({
     return WeekStatus.star;
   }
 
-  if (practicedMinutes >= minimumMinutes) {
-    return WeekStatus.green;
-  }
+  if (practicedSeconds >= minimumMinutes * 60) {
+  return WeekStatus.green;
+}
 
   if (isCurrentWeek) {
     return WeekStatus.yellow;

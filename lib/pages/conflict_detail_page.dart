@@ -41,7 +41,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
     }).toList();
   }
 
-  Future<int> computePracticeMinutes(
+  Future<int> computePracticeSeconds(
     List<dynamic> rawTimeline,
     int duration,
   ) async {
@@ -90,13 +90,13 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
     for (final doc in sessions.docs) {
       final data = doc.data();
 
-      total += (data['practiceMinutes'] as int?) ?? 0;
+      total += (data['practiceSeconds'] as int?) ?? 0;
     }
 
     await FirebasePaths.weekDoc(
       uid: uid,
       weekId: weekId,
-    ).update({'totalPracticeMinutes': total});
+    ).update({'totalPracticeSeconds': total});
   }
 
   Future<void> resolveWinner(Map<String, dynamic> winnerRef) async {
@@ -126,7 +126,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
 
     final duration = data['duration'] ?? 0;
 
-    final updatedPracticeMinutes = await computePracticeMinutes(
+    final updatedPracticeSeconds = await computePracticeSeconds(
       updatedTimeline,
       duration,
     );
@@ -140,7 +140,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
     ).update({
       'timeline': updatedTimeline,
 
-      'practiceMinutes': updatedPracticeMinutes,
+      'practiceSeconds': updatedPracticeSeconds,
     });
 
     await recomputeWeekTotal(
@@ -210,7 +210,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
       };
     }).toList();
 
-    final updatedPracticeMinutes = await computePracticeMinutes(
+    final updatedPracticeSeconds = await computePracticeSeconds(
       updatedTimeline,
       data['duration'] ?? 0,
     );
@@ -224,7 +224,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
     ).update({
       'timeline': updatedTimeline,
 
-      'practiceMinutes': updatedPracticeMinutes,
+      'practiceSeconds': updatedPracticeSeconds,
     });
 
     await recomputeWeekTotal(uid: loserRef['uid'], weekId: loserRef['weekId']);
@@ -257,7 +257,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
       return {...seg, 'flagged': false, 'resolved': false, 'fraudulent': true};
     }).toList();
 
-    final updatedPracticeMinutes = await computePracticeMinutes(
+    final updatedPracticeSeconds = await computePracticeSeconds(
       updatedTimeline,
       data['duration'] ?? 0,
     );
@@ -271,7 +271,7 @@ class _ConflictDetailPageState extends State<ConflictDetailPage> {
     ).update({
       'timeline': updatedTimeline,
 
-      'practiceMinutes': updatedPracticeMinutes,
+      'practiceSeconds': updatedPracticeSeconds,
     });
 
     await recomputeWeekTotal(uid: loserRef['uid'], weekId: loserRef['weekId']);

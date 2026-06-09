@@ -18,7 +18,7 @@ Future<int> getWeekPracticeTotal({
 
   final data = snapshot.data()!;
 
-  return (data['totalPracticeMinutes']
+  return (data['totalPracticeSeconds']
           as int?) ??
       0;
 }

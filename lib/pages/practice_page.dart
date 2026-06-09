@@ -130,7 +130,7 @@ class _PracticePageState extends State<PracticePage>
 
         'weekNumber': currentWeek!.weekNumber,
 
-        'totalPracticeMinutes': 0,
+        'totalPracticeSeconds': 0,
 
         'activeSession': true,
 
@@ -884,7 +884,7 @@ class _PracticePageState extends State<PracticePage>
     }
   }
 
-  Future<int> computePracticeMinutes() async {
+  Future<int> computePracticeSeconds() async {
     int practice = 0;
 
     for (int i = 0; i < timeline.length; i++) {
@@ -929,13 +929,13 @@ class _PracticePageState extends State<PracticePage>
     for (final doc in sessions.docs) {
       final data = doc.data();
 
-      total += (data['practiceMinutes'] as int?) ?? 0;
+      total += (data['practiceSeconds'] as int?) ?? 0;
     }
 
     await FirebasePaths.weekDoc(
       uid: uid,
       weekId: currentWeek!.weekId,
-    ).update({'totalPracticeMinutes': total});
+    ).update({'totalPracticeSeconds': total});
   }
 
   @override
@@ -1262,8 +1262,8 @@ class _PracticePageState extends State<PracticePage>
                           });
 
                           try {
-                            final practiceMinutes =
-                                await computePracticeMinutes();
+                            final practiceSeconds =
+                                await computePracticeSeconds();
 
                             await FirebasePaths.sessionDoc(
                               uid: uid,
@@ -1304,7 +1304,7 @@ class _PracticePageState extends State<PracticePage>
 
                               'endTime': DateTime.now(),
 
-                              'practiceMinutes': practiceMinutes,
+                              'practiceSeconds': practiceSeconds,
                             });
 
                             await FirebasePaths.weekDoc(
