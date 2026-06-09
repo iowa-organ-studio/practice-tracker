@@ -38,8 +38,8 @@ dependencies:
   shared_preferences: ^2.5.5
   sensors_plus: ^7.0.0
   flutter_svg: ^2.3.0
-  firebase_core: ^4.8.0
-  cloud_firestore: ^6.4.0
+  firebase_core: ^4.10.0
+  cloud_firestore: ^6.5.0
   path_provider: ^2.1.5
   uuid: ^4.5.1
   wakelock_plus: ^1.2.8
