@@ -13,6 +13,7 @@ import 'dart:math';
 import '../services/user_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'home_page.dart';
 
 class HarmonyProgressPage extends StatefulWidget {
   const HarmonyProgressPage({super.key});
@@ -104,66 +105,21 @@ class _HarmonyProgressPageState extends State<HarmonyProgressPage> {
         final competencies = competencySnapshot.data!;
 
         return Scaffold(
+          appBar: AppBar(
+            iconTheme: const IconThemeData(color: Colors.black),
+            title: const Text(
+              "Harmony Progress",
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
           body: SafeArea(
             child: Column(
               children: [
-                FutureBuilder<Map<String, String>>(
-                  future: getUserInfo(),
+                
 
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const SizedBox();
-                    }
+                const SizedBox(height: 2),
 
-                    final user = snapshot.data!;
-
-                    return Container(
-                      width: double.infinity,
-
-                      color: Colors.black,
-
-                      padding: const EdgeInsets.all(12),
-
-                      child: RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: "${user['name'] ?? ''} ",
-
-                              style: const TextStyle(
-                                color: gold,
-
-                                fontSize: 18,
-
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-
-                            const TextSpan(
-                              text: "Harmony Progress",
-
-                              style: TextStyle(
-                                color: Colors.white,
-
-                                fontSize: 18,
-
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 12),
-
-                const Text(
-                  "Harmony Progress",
-
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
+                
 
                 Expanded(
                   child: ListView.builder(
