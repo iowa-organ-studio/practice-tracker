@@ -750,7 +750,7 @@ class _PracticePageState extends State<PracticePage>
       syncTimeline();
     });
 
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    timer = Timer.periodic(const Duration(seconds: 1), (_) async {
       if (!mounted) return;
 
       if (isPaused) {
@@ -760,6 +760,10 @@ class _PracticePageState extends State<PracticePage>
       setState(() {
         seconds++;
       });
+
+      if (seconds >= 10800) {
+        await stopPracticeSession(autoStop: true);
+      }
     });
 
     accelerometerEventStream().listen((event) {
@@ -936,6 +940,129 @@ class _PracticePageState extends State<PracticePage>
       uid: uid,
       weekId: currentWeek!.weekId,
     ).update({'totalPracticeSeconds': total});
+  }
+
+  Future<void> stopPracticeSession({bool autoStop = false}) async {
+    timer.cancel();
+
+    final connectivityResults = await Connectivity().checkConnectivity();
+
+    final offline = connectivityResults.contains(ConnectivityResult.none);
+
+    if (offline) {
+      await Future.delayed(const Duration(seconds: 3));
+
+      await savePendingStopUpload();
+
+      if (mounted) {
+        setState(() {
+          uploadPending = true;
+        });
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              widget.adminMode ? const AdminPage() : const HomePage(),
+        ),
+        (route) => false,
+      );
+
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        isSavingSession = true;
+      });
+    }
+
+    try {
+      final practiceSeconds = await computePracticeSeconds();
+
+      await FirebasePaths.sessionDoc(
+        uid: uid,
+        weekId: currentWeek!.weekId,
+        sessionId: sessionId!,
+      ).update({
+        'duration': seconds,
+        'timeline': timeline
+            .map(
+              (e) => {
+                'start': e.start,
+                'moving': e.moving,
+                'flagged': e.flagged,
+                'paused': e.paused,
+                'resolved': e.resolved,
+                'fraudulent': e.fraudulent,
+              },
+            )
+            .toList(),
+        'waveform': waveform
+            .map((e) => {'second': e.second, 'amplitude': e.amplitude})
+            .toList(),
+        'endTime': DateTime.now(),
+        'practiceSeconds': practiceSeconds,
+      });
+
+      await FirebasePaths.weekDoc(uid: uid, weekId: currentWeek!.weekId).update(
+        {
+          'activeSession': false,
+          'currentOrgan': null,
+          'currentSessionId': null,
+        },
+      );
+
+      await recomputeWeekTotal();
+    } catch (e) {
+      debugPrint("Error updating session: $e");
+
+      await savePendingStopUpload();
+
+      await FirebasePaths.sessionDoc(
+        uid: uid,
+        weekId: currentWeek!.weekId,
+        sessionId: sessionId!,
+      ).update({'endedOffline': true});
+    }
+
+    if (!mounted) return;
+
+    if (autoStop) {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) {
+          return AlertDialog(
+            title: const Text("Session Ended"),
+            content: const Text(
+              "Maximum practice session length reached (3 hours).\n\nPress Continue to go to the home page.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text("Continue"),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => widget.adminMode ? const AdminPage() : const HomePage(),
+      ),
+      (route) => false,
+    );
   }
 
   @override
@@ -1211,158 +1338,7 @@ class _PracticePageState extends State<PracticePage>
                           foregroundColor: Colors.black,
                         ),
                         onPressed: () async {
-                          timer.cancel();
-
-                          final connectivityResults = await Connectivity()
-                              .checkConnectivity();
-
-                          final offline = connectivityResults.contains(
-                            ConnectivityResult.none,
-                          );
-
-                          if (offline) {
-                            await Future.delayed(const Duration(seconds: 3));
-                            await savePendingStopUpload();
-
-                            if (mounted) {
-                              setState(() {
-                                uploadPending = true;
-                              });
-                            }
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                duration: Duration(seconds: 8),
-
-                                content: Text(
-                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
-                                ),
-                              ),
-                            );
-
-                            if (!mounted) return;
-
-                            Navigator.pushAndRemoveUntil(
-                              context,
-
-                              MaterialPageRoute(
-                                builder: (_) => widget.adminMode
-                                    ? const AdminPage()
-                                    : const HomePage(),
-                              ),
-
-                              (route) => false,
-                            );
-
-                            return;
-                          }
-
-                          setState(() {
-                            isSavingSession = true;
-                          });
-
-                          try {
-                            final practiceSeconds =
-                                await computePracticeSeconds();
-
-                            await FirebasePaths.sessionDoc(
-                              uid: uid,
-
-                              weekId: currentWeek!.weekId,
-
-                              sessionId: sessionId!,
-                            ).update({
-                              'duration': seconds,
-
-                              'timeline': timeline
-                                  .map(
-                                    (e) => {
-                                      'start': e.start,
-
-                                      'moving': e.moving,
-
-                                      'flagged': e.flagged,
-
-                                      'paused': e.paused,
-
-                                      'resolved': e.resolved,
-
-                                      'fraudulent': e.fraudulent,
-                                    },
-                                  )
-                                  .toList(),
-
-                              'waveform': waveform
-                                  .map(
-                                    (e) => {
-                                      'second': e.second,
-
-                                      'amplitude': e.amplitude,
-                                    },
-                                  )
-                                  .toList(),
-
-                              'endTime': DateTime.now(),
-
-                              'practiceSeconds': practiceSeconds,
-                            });
-
-                            await FirebasePaths.weekDoc(
-                              uid: uid,
-
-                              weekId: currentWeek!.weekId,
-                            ).update({
-                              'activeSession': false,
-
-                              'currentOrgan': null,
-
-                              'currentSessionId': null,
-                            });
-
-                            await recomputeWeekTotal();
-                          } catch (e) {
-                            debugPrint("Error updating session: $e");
-
-                            await savePendingStopUpload();
-
-                            await FirebasePaths.sessionDoc(
-                              uid: uid,
-
-                              weekId: currentWeek!.weekId,
-
-                              sessionId: sessionId!,
-                            ).update({'endedOffline': true});
-
-                            if (mounted) {
-                              setState(() {
-                                uploadPending = true;
-                              });
-                            }
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                duration: Duration(seconds: 8),
-
-                                content: Text(
-                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
-                                ),
-                              ),
-                            );
-                          }
-
-                          if (!mounted) return;
-
-                          Navigator.pushAndRemoveUntil(
-                            context,
-
-                            MaterialPageRoute(
-                              builder: (_) => widget.adminMode
-                                  ? const AdminPage()
-                                  : const HomePage(),
-                            ),
-
-                            (route) => false,
-                          );
+                          await stopPracticeSession();
                         },
                         child: const Text("Stop Practice"),
                       ),

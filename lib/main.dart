@@ -13,6 +13,7 @@ import 'pages/admin_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:uuid/uuid.dart';
+import 'package:flutter/services.dart';
 
 Future<Widget> getStartPage() async {
   final prefs = await SharedPreferences.getInstance();
@@ -65,6 +66,11 @@ final snapshot =
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+
   await Firebase.initializeApp();
 
   final startPage = await getStartPage();
