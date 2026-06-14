@@ -262,6 +262,7 @@ class _PracticePageState extends State<PracticePage>
         final active = data['activeSession'] == true;
 
         if (!active) {
+          debugPrint("REJECT active=false");
           return false;
         }
 
@@ -373,61 +374,39 @@ class _PracticePageState extends State<PracticePage>
     }
   }
 
-  Future<void> startOverlapWatcher() async {
-    if (currentWeek == null) {
-      return;
-    }
+  void startOverlapWatcher() {
+    if (currentWeek == null) return;
 
-    overlapSubscription = Stream.periodic(const Duration(seconds: 5))
-        .asyncMap((_) async {
-          final usersSnapshot = await FirebaseFirestore.instance
-              .collection('users')
-              .get();
-
-          List<DocumentSnapshot<Map<String, dynamic>>> cusps = [];
-
-          for (final userDoc in usersSnapshot.docs) {
-            final weekDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(userDoc.id)
-                .collection('weeks')
-                .doc(currentWeek!.weekId)
-                .get();
-
-            if (weekDoc.exists) {
-              cusps.add(weekDoc);
-            }
-          }
-
-          return cusps;
-        })
+    // Real-time listener: Firestore pushes updates only when data changes.
+    // Replaces the Stream.periodic approach that was doing (1 + N) reads
+    // every 5 seconds. Now we get 1 initial read + 1 read per actual change.
+    //
+    // Requires a composite index on the 'weeks' collectionGroup:
+    //   activeSession ASC, currentOrgan ASC, weekId ASC
+    // Add it in the Firebase console or via firestore.indexes.json.
+    overlapSubscription = FirebaseFirestore.instance
+        .collectionGroup('weeks')
+        .where('activeSession', isEqualTo: true)
+        .where('currentOrgan', isEqualTo: widget.instrument)
+        .where('weekId', isEqualTo: currentWeek!.weekId)
+        .snapshots()
         .listen((snapshot) async {
           final now = DateTime.now();
 
-          bool overlapNow = snapshot.any((doc) {
-            final data = doc.data()!;
-
-            final active = data['activeSession'] == true;
-
-            if (!active) {
-              return false;
-            }
+          bool overlapNow = snapshot.docs.any((doc) {
+            final data = doc.data();
 
             final currentSession = data['currentSessionId'];
 
             if (currentSession == sessionId) {
-              return false;
-            }
-
-            final organ = data['currentOrgan'];
-
-            if (organ != widget.instrument) {
+              debugPrint("REJECT same session");
               return false;
             }
 
             final heartbeat = data['lastHeartbeat'];
 
             if (heartbeat == null) {
+              debugPrint("REJECT heartbeat null");
               return false;
             }
 
@@ -437,11 +416,31 @@ class _PracticePageState extends State<PracticePage>
                 now.difference(heartbeatTime) > const Duration(minutes: 3);
 
             if (stale) {
+              debugPrint(
+                "REJECT stale heartbeat "
+                "user=${doc.reference.parent.parent!.id} "
+                "organ=${widget.instrument} "
+                "age=${now.difference(heartbeatTime).inSeconds}s",
+              );
               return false;
             }
 
+            debugPrint(
+              "FOUND OVERLAP "
+              "me=$uid "
+              "other=${doc.reference.parent.parent!.id}",
+            );
+
             return true;
           });
+
+          debugPrint(
+            "OVERLAP CHECK "
+            "uid=$uid "
+            "session=$sessionId "
+            "organ=${widget.instrument} "
+            "overlapNow=$overlapNow",
+          );
 
           final newFlaggedState = widget.instrument != 'Other' && overlapNow;
 
@@ -455,7 +454,6 @@ class _PracticePageState extends State<PracticePage>
                 Segment(
                   seconds,
                   isMoving,
-
                   flagged: newFlaggedState && !isMoving,
                 ),
               );
@@ -586,7 +584,7 @@ class _PracticePageState extends State<PracticePage>
     await createSession();
     debugPrint("SESSION CREATED");
     if (widget.instrument != 'Other') {
-      await startOverlapWatcher();
+      startOverlapWatcher();
       debugPrint("OVERLAP WATCHER STARTED");
     }
     if (mounted) {
@@ -750,7 +748,7 @@ class _PracticePageState extends State<PracticePage>
       syncTimeline();
     });
 
-    timer = Timer.periodic(const Duration(seconds: 1), (_) async {
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
 
       if (isPaused) {
@@ -760,10 +758,6 @@ class _PracticePageState extends State<PracticePage>
       setState(() {
         seconds++;
       });
-
-      if (seconds >= 10800) {
-        await stopPracticeSession(autoStop: true);
-      }
     });
 
     accelerometerEventStream().listen((event) {
@@ -940,129 +934,6 @@ class _PracticePageState extends State<PracticePage>
       uid: uid,
       weekId: currentWeek!.weekId,
     ).update({'totalPracticeSeconds': total});
-  }
-
-  Future<void> stopPracticeSession({bool autoStop = false}) async {
-    timer.cancel();
-
-    final connectivityResults = await Connectivity().checkConnectivity();
-
-    final offline = connectivityResults.contains(ConnectivityResult.none);
-
-    if (offline) {
-      await Future.delayed(const Duration(seconds: 3));
-
-      await savePendingStopUpload();
-
-      if (mounted) {
-        setState(() {
-          uploadPending = true;
-        });
-      }
-
-      if (!mounted) return;
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              widget.adminMode ? const AdminPage() : const HomePage(),
-        ),
-        (route) => false,
-      );
-
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        isSavingSession = true;
-      });
-    }
-
-    try {
-      final practiceSeconds = await computePracticeSeconds();
-
-      await FirebasePaths.sessionDoc(
-        uid: uid,
-        weekId: currentWeek!.weekId,
-        sessionId: sessionId!,
-      ).update({
-        'duration': seconds,
-        'timeline': timeline
-            .map(
-              (e) => {
-                'start': e.start,
-                'moving': e.moving,
-                'flagged': e.flagged,
-                'paused': e.paused,
-                'resolved': e.resolved,
-                'fraudulent': e.fraudulent,
-              },
-            )
-            .toList(),
-        'waveform': waveform
-            .map((e) => {'second': e.second, 'amplitude': e.amplitude})
-            .toList(),
-        'endTime': DateTime.now(),
-        'practiceSeconds': practiceSeconds,
-      });
-
-      await FirebasePaths.weekDoc(uid: uid, weekId: currentWeek!.weekId).update(
-        {
-          'activeSession': false,
-          'currentOrgan': null,
-          'currentSessionId': null,
-        },
-      );
-
-      await recomputeWeekTotal();
-    } catch (e) {
-      debugPrint("Error updating session: $e");
-
-      await savePendingStopUpload();
-
-      await FirebasePaths.sessionDoc(
-        uid: uid,
-        weekId: currentWeek!.weekId,
-        sessionId: sessionId!,
-      ).update({'endedOffline': true});
-    }
-
-    if (!mounted) return;
-
-    if (autoStop) {
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) {
-          return AlertDialog(
-            title: const Text("Session Ended"),
-            content: const Text(
-              "Maximum practice session length reached (3 hours).\n\nPress Continue to go to the home page.",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: const Text("Continue"),
-              ),
-            ],
-          );
-        },
-      );
-    }
-
-    if (!mounted) return;
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (_) => widget.adminMode ? const AdminPage() : const HomePage(),
-      ),
-      (route) => false,
-    );
   }
 
   @override
@@ -1338,7 +1209,158 @@ class _PracticePageState extends State<PracticePage>
                           foregroundColor: Colors.black,
                         ),
                         onPressed: () async {
-                          await stopPracticeSession();
+                          timer.cancel();
+
+                          final connectivityResults = await Connectivity()
+                              .checkConnectivity();
+
+                          final offline = connectivityResults.contains(
+                            ConnectivityResult.none,
+                          );
+
+                          if (offline) {
+                            await Future.delayed(const Duration(seconds: 3));
+                            await savePendingStopUpload();
+
+                            if (mounted) {
+                              setState(() {
+                                uploadPending = true;
+                              });
+                            }
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                duration: Duration(seconds: 8),
+
+                                content: Text(
+                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
+                                ),
+                              ),
+                            );
+
+                            if (!mounted) return;
+
+                            Navigator.pushAndRemoveUntil(
+                              context,
+
+                              MaterialPageRoute(
+                                builder: (_) => widget.adminMode
+                                    ? const AdminPage()
+                                    : const HomePage(),
+                              ),
+
+                              (route) => false,
+                            );
+
+                            return;
+                          }
+
+                          setState(() {
+                            isSavingSession = true;
+                          });
+
+                          try {
+                            final practiceSeconds =
+                                await computePracticeSeconds();
+
+                            await FirebasePaths.sessionDoc(
+                              uid: uid,
+
+                              weekId: currentWeek!.weekId,
+
+                              sessionId: sessionId!,
+                            ).update({
+                              'duration': seconds,
+
+                              'timeline': timeline
+                                  .map(
+                                    (e) => {
+                                      'start': e.start,
+
+                                      'moving': e.moving,
+
+                                      'flagged': e.flagged,
+
+                                      'paused': e.paused,
+
+                                      'resolved': e.resolved,
+
+                                      'fraudulent': e.fraudulent,
+                                    },
+                                  )
+                                  .toList(),
+
+                              'waveform': waveform
+                                  .map(
+                                    (e) => {
+                                      'second': e.second,
+
+                                      'amplitude': e.amplitude,
+                                    },
+                                  )
+                                  .toList(),
+
+                              'endTime': DateTime.now(),
+
+                              'practiceSeconds': practiceSeconds,
+                            });
+
+                            await FirebasePaths.weekDoc(
+                              uid: uid,
+
+                              weekId: currentWeek!.weekId,
+                            ).update({
+                              'activeSession': false,
+
+                              'currentOrgan': null,
+
+                              'currentSessionId': null,
+                            });
+
+                            await recomputeWeekTotal();
+                          } catch (e) {
+                            debugPrint("Error updating session: $e");
+
+                            await savePendingStopUpload();
+
+                            await FirebasePaths.sessionDoc(
+                              uid: uid,
+
+                              weekId: currentWeek!.weekId,
+
+                              sessionId: sessionId!,
+                            ).update({'endedOffline': true});
+
+                            if (mounted) {
+                              setState(() {
+                                uploadPending = true;
+                              });
+                            }
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                duration: Duration(seconds: 8),
+
+                                content: Text(
+                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (!mounted) return;
+
+                          Navigator.pushAndRemoveUntil(
+                            context,
+
+                            MaterialPageRoute(
+                              builder: (_) => widget.adminMode
+                                  ? const AdminPage()
+                                  : const HomePage(),
+                            ),
+
+                            (route) => false,
+                          );
                         },
                         child: const Text("Stop Practice"),
                       ),

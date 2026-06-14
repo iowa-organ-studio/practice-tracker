@@ -24,6 +24,7 @@ import 'review_page.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'dart:async';
 import 'dart:convert';
 import '../services/firebase_paths.dart';
 import '../services/week_service.dart';
@@ -38,11 +39,52 @@ class AdminPage extends StatefulWidget {
 }
 
 class _AdminPageState extends State<AdminPage> {
+  StreamSubscription? _staleSubscription;
+  int _staleCount = 0;
+
   @override
   void initState() {
     super.initState();
-
     retryPendingUpload();
+    _initStaleStream();
+  }
+
+  Future<void> _initStaleStream() async {
+    final week = await getCurrentWeekInfo();
+    if (week == null || !mounted) return;
+
+    _staleSubscription = FirebaseFirestore.instance
+        .collectionGroup('weeks')
+        .where('activeSession', isEqualTo: true)
+        .where('weekId', isEqualTo: week.weekId)
+        .snapshots()
+        .listen((snapshot) {
+          final now = DateTime.now();
+          int count = 0;
+
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final heartbeat = data['lastHeartbeat'];
+
+            if (heartbeat == null) {
+              count++;
+              continue;
+            }
+
+            final heartbeatTime = (heartbeat as Timestamp).toDate();
+            if (now.difference(heartbeatTime).inMinutes > 10) {
+              count++;
+            }
+          }
+
+          if (mounted) setState(() => _staleCount = count);
+        });
+  }
+
+  @override
+  void dispose() {
+    _staleSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> retryPendingUpload() async {
@@ -193,97 +235,10 @@ class _AdminPageState extends State<AdminPage> {
                           );
                         },
 
-                        child: FutureBuilder<WeekInfo?>(
-                          future: getCurrentWeekInfo(),
-
-                          builder: (context, weekSnapshot) {
-                            if (weekSnapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Text("Remove Stale Sessions");
-                            }
-
-                            final week = weekSnapshot.data;
-
-                            if (week == null) {
-                              return const Text("Remove Stale Sessions");
-                            }
-
-                            return StreamBuilder<QuerySnapshot>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('users')
-                                  .snapshots(),
-
-                              builder: (context, userSnapshot) {
-                                if (!userSnapshot.hasData) {
-                                  return const Text("Remove Stale Sessions");
-                                }
-
-                                final userDocs = userSnapshot.data?.docs ?? [];
-
-                                return FutureBuilder<int>(
-                                  future: () async {
-                                    int staleCount = 0;
-
-                                    final now = DateTime.now();
-
-                                    for (final userDoc in userDocs) {
-                                      final weekDoc = await FirebaseFirestore
-                                          .instance
-                                          .collection('users')
-                                          .doc(userDoc.id)
-                                          .collection('weeks')
-                                          .doc(week.weekId)
-                                          .get();
-
-                                      if (!weekDoc.exists) {
-                                        continue;
-                                      }
-
-                                      final data = weekDoc.data()!;
-
-                                      final active =
-                                          data['activeSession'] == true;
-
-                                      if (!active) {
-                                        continue;
-                                      }
-
-                                      final heartbeat = data['lastHeartbeat'];
-
-                                      if (heartbeat == null) {
-                                        staleCount++;
-
-                                        continue;
-                                      }
-
-                                      final heartbeatTime =
-                                          (heartbeat as Timestamp).toDate();
-
-                                      final stale =
-                                          now
-                                              .difference(heartbeatTime)
-                                              .inMinutes >
-                                          10;
-
-                                      if (stale) {
-                                        staleCount++;
-                                      }
-                                    }
-
-                                    return staleCount;
-                                  }(),
-
-                                  builder: (context, countSnapshot) {
-                                    final staleCount = countSnapshot.data ?? 0;
-
-                                    return Text(
-                                      "Remove Stale Sessions ($staleCount)",
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          },
+                        child: Text(
+                          _staleCount > 0
+                              ? "Remove Stale Sessions ($_staleCount)"
+                              : "Remove Stale Sessions",
                         ),
                       ),
 
