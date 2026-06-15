@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:metronome/metronome.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -60,6 +62,230 @@ class _PracticePageState extends State<PracticePage>
   bool isSavingSession = false;
 
   bool uploadPending = false;
+
+  // Metronome state
+  // Metronome state
+  int _mm = 126;
+  bool _mmClassicMode = true;
+  bool _mmRunning = false;
+  final Metronome _metronome = Metronome();
+  bool _metronomeInitialized = false;
+
+  // Tap tempo state
+
+  static const List<int> _classicMM = [
+    30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 63, 66, 69, 72,
+    76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 126, 132,
+    138, 144, 152, 160, 168, 176, 184, 192, 200,
+  ];
+
+  Timer? _mmBpmDebounce;
+
+  void _mmStep(int direction) {
+    setState(() {
+      if (_mmClassicMode) {
+        final idx = _classicMM.indexOf(_mm);
+        if (idx == -1) {
+          if (direction > 0) {
+            _mm = _classicMM.firstWhere((v) => v > _mm,
+                orElse: () => _classicMM.last);
+          } else {
+            _mm = _classicMM.lastWhere((v) => v < _mm,
+                orElse: () => _classicMM.first);
+          }
+        } else {
+          final next = idx + direction;
+          _mm = _classicMM[next.clamp(0, _classicMM.length - 1)];
+        }
+      } else {
+        _mm = (_mm + direction).clamp(30, 200);
+      }
+    });
+    if (_mmRunning) _debouncedBpmChange();
+  }
+
+  void _debouncedBpmChange() {
+    _mmBpmDebounce?.cancel();
+    _mmBpmDebounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!_mmRunning) return;
+      _metronome.destroy();
+      _metronomeInitialized = false;
+      await _metronome.init(
+        'assets/audio/claves44_wav.wav',
+        bpm: _mm,
+        volume: 100,
+        timeSignature: 4,
+        enableTickCallback: false,
+      );
+      await Future.delayed(const Duration(milliseconds: 200));
+      _metronomeInitialized = true;
+      if (_mmRunning) _metronome.play();
+    });
+  }
+
+  void _showMMNumberPad() {
+    String input = '';
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          void onDigit(String d) {
+            if (input.length < 3) setDialogState(() => input += d);
+          }
+          void onDelete() {
+            if (input.isNotEmpty) {
+              setDialogState(() => input = input.substring(0, input.length - 1));
+            }
+          }
+          void onConfirm() {
+            final val = int.tryParse(input);
+            if (val != null) {
+              final clamped = val.clamp(30, 200);
+              setState(() => _mm = clamped);
+              if (_mmRunning) _debouncedBpmChange();
+            }
+            Navigator.of(ctx).pop();
+          }
+
+          Widget numKey(String label, {VoidCallback? onTap, Color? color}) {
+            return GestureDetector(
+              onTap: onTap,
+              child: Container(
+                margin: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: color ?? Colors.grey.shade800,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color != null ? Colors.black : Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return Dialog(
+            backgroundColor: Colors.black,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Enter MM (30–200)',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade900,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      input.isEmpty ? '—' : input,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: GridView.count(
+                      crossAxisCount: 3,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        ...['7','8','9','4','5','6','1','2','3'].map(
+                          (d) => numKey(d, onTap: () => onDigit(d)),
+                        ),
+                        numKey('⌫', onTap: onDelete, color: Colors.grey.shade600),
+                        numKey('0', onTap: () => onDigit('0')),
+                        numKey('✓', onTap: onConfirm, color: gold),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _mmStop() {
+    _metronome.destroy();
+    _metronomeInitialized = false;
+    setState(() => _mmRunning = false);
+  }
+
+  Future<void> _mmToggle() async {
+    if (_mmRunning) {
+      _mmStop();
+    } else {
+      // Always init fresh with current _mm so we never play a stale BPM
+      _metronome.destroy();
+      _metronomeInitialized = false;
+      await _metronome.init(
+        'assets/audio/claves44_wav.wav',
+        bpm: _mm,
+        volume: 100,
+        timeSignature: 4,
+        enableTickCallback: false,
+      );
+      // Brief pause to let native AudioTrack finish initializing
+      await Future.delayed(const Duration(milliseconds: 200));
+      _metronomeInitialized = true;
+      _metronome.play();
+      setState(() => _mmRunning = true);
+    }
+  }
+
+  final Stopwatch _tapStopwatch = Stopwatch();
+  final List<int> _tapIntervals = []; // milliseconds between taps
+
+  void _onTargetTap() {
+    if (!_tapStopwatch.isRunning) {
+      // First tap — just start the clock
+      _tapStopwatch.reset();
+      _tapStopwatch.start();
+      _tapIntervals.clear();
+      return;
+    }
+
+    final elapsed = _tapStopwatch.elapsedMilliseconds;
+
+    // If more than 2.5s since last tap, treat as a fresh start
+    if (elapsed > 2500) {
+      _tapStopwatch.reset();
+      _tapStopwatch.start();
+      _tapIntervals.clear();
+      return;
+    }
+
+    _tapIntervals.add(elapsed);
+    _tapStopwatch.reset(); // reset for next interval
+
+    // Use average of last 3 intervals — locks in within 3 taps
+    final recent = _tapIntervals.length > 3
+        ? _tapIntervals.sublist(_tapIntervals.length - 3)
+        : List<int>.from(_tapIntervals);
+    final avgMs = recent.reduce((a, b) => a + b) / recent.length;
+    final bpm = (60000 / avgMs).round().clamp(30, 200);
+    setState(() => _mm = bpm);
+    if (_mmRunning) _debouncedBpmChange();
+  }
 
   bool isPaused = false;
 
@@ -377,13 +603,6 @@ class _PracticePageState extends State<PracticePage>
   void startOverlapWatcher() {
     if (currentWeek == null) return;
 
-    // Real-time listener: Firestore pushes updates only when data changes.
-    // Replaces the Stream.periodic approach that was doing (1 + N) reads
-    // every 5 seconds. Now we get 1 initial read + 1 read per actual change.
-    //
-    // Requires a composite index on the 'weeks' collectionGroup:
-    //   activeSession ASC, currentOrgan ASC, weekId ASC
-    // Add it in the Firebase console or via firestore.indexes.json.
     overlapSubscription = FirebaseFirestore.instance
         .collectionGroup('weeks')
         .where('activeSession', isEqualTo: true)
@@ -395,51 +614,26 @@ class _PracticePageState extends State<PracticePage>
 
           bool overlapNow = snapshot.docs.any((doc) {
             final data = doc.data();
-
             final currentSession = data['currentSessionId'];
-
-            if (currentSession == sessionId) {
-              debugPrint("REJECT same session");
-              return false;
-            }
+            if (currentSession == sessionId) return false;
 
             final heartbeat = data['lastHeartbeat'];
-
-            if (heartbeat == null) {
-              debugPrint("REJECT heartbeat null");
-              return false;
-            }
+            if (heartbeat == null) return false;
 
             final heartbeatTime = (heartbeat as Timestamp).toDate();
-
             final stale =
                 now.difference(heartbeatTime) > const Duration(minutes: 3);
-
-            if (stale) {
-              debugPrint(
-                "REJECT stale heartbeat "
-                "user=${doc.reference.parent.parent!.id} "
-                "organ=${widget.instrument} "
-                "age=${now.difference(heartbeatTime).inSeconds}s",
-              );
-              return false;
-            }
+            if (stale) return false;
 
             debugPrint(
-              "FOUND OVERLAP "
-              "me=$uid "
-              "other=${doc.reference.parent.parent!.id}",
+              "FOUND OVERLAP me=$uid other=${doc.reference.parent.parent!.id}",
             );
-
             return true;
           });
 
           debugPrint(
-            "OVERLAP CHECK "
-            "uid=$uid "
-            "session=$sessionId "
-            "organ=${widget.instrument} "
-            "overlapNow=$overlapNow",
+            "OVERLAP CHECK uid=$uid session=$sessionId "
+            "organ=${widget.instrument} overlapNow=$overlapNow",
           );
 
           final newFlaggedState = widget.instrument != 'Other' && overlapNow;
@@ -449,13 +643,8 @@ class _PracticePageState extends State<PracticePage>
 
             setState(() {
               isFlagged = newFlaggedState;
-
               timeline.add(
-                Segment(
-                  seconds,
-                  isMoving,
-                  flagged: newFlaggedState && !isMoving,
-                ),
+                Segment(seconds, isMoving, flagged: newFlaggedState && !isMoving),
               );
             });
 
@@ -463,10 +652,7 @@ class _PracticePageState extends State<PracticePage>
 
             if (!previousFlaggedState && newFlaggedState) {
               await createConflict();
-
-              if (!initiatedOverlap) {
-                showOverlapDialog();
-              }
+              if (!initiatedOverlap) showOverlapDialog();
             }
           }
         });
@@ -748,6 +934,8 @@ class _PracticePageState extends State<PracticePage>
       syncTimeline();
     });
 
+    // Metronome is initialized fresh on each Start press
+
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
 
@@ -831,6 +1019,9 @@ class _PracticePageState extends State<PracticePage>
     heartbeatTimer?.cancel();
 
     overlapSubscription?.cancel();
+
+    _mmBpmDebounce?.cancel();
+    _metronome.destroy();
 
     recorder.stop();
 
@@ -1017,7 +1208,7 @@ class _PracticePageState extends State<PracticePage>
                       const SizedBox(height: 10),
 
                       SizedBox(
-                        height: 84,
+                        height: 50,
                         child: Row(
                           children: [
                             Expanded(
@@ -1084,7 +1275,7 @@ class _PracticePageState extends State<PracticePage>
                         const SizedBox(height: 10),
 
                         SizedBox(
-                          height: 84,
+                          height: 50,
                           child: Row(
                             children: [
                               Expanded(
@@ -1364,6 +1555,128 @@ class _PracticePageState extends State<PracticePage>
                         },
                         child: const Text("Stop Practice"),
                       ),
+
+                      const SizedBox(height: 16),
+
+                      // ── Metronome ──────────────────────────────────────
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          children: [
+                            // Row 1: - | MM | + | Classic | ±1
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _mmButton(
+                                  label: '−',
+                                  onTap: () => _mmStep(-1),
+                                ),
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: _showMMNumberPad,
+                                  child: Container(
+                                    width: 58,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: gold.withOpacity(0.4),
+                                        width: 1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Text(
+                                      '$_mm',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                _mmButton(
+                                  label: '+',
+                                  onTap: () => _mmStep(1),
+                                ),
+                                const SizedBox(width: 16),
+                                _mmModeButton(
+                                  label: 'Classic',
+                                  active: _mmClassicMode,
+                                  onTap: () =>
+                                      setState(() => _mmClassicMode = true),
+                                ),
+                                const SizedBox(width: 8),
+                                _mmModeButton(
+                                  label: '±1',
+                                  active: !_mmClassicMode,
+                                  onTap: () =>
+                                      setState(() => _mmClassicMode = false),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Row 2: tap target | tap MM display | Start/Stop
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Tap target — tap repeatedly to set tempo
+                                GestureDetector(
+                                  onTap: _onTargetTap,
+                                  child: CustomPaint(
+                                    size: const Size(64, 64),
+                                    painter: _ConcentricCirclesPainter(gold),
+                                  ),
+                                ),
+
+                                const SizedBox(width: 24),
+
+                                // Start / Stop button
+                                GestureDetector(
+                                  onTap: () {
+                                    debugPrint('METRO: button tapped');
+                                    _mmToggle();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _mmRunning
+                                          ? Colors.red
+                                          : Colors.green,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _mmRunning ? 'Stop' : 'Start',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      // ── End Metronome ───────────────────────────────────
+
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
@@ -1382,4 +1695,81 @@ class _PracticePageState extends State<PracticePage>
       ),
     );
   }
+
+  Widget _mmButton({required String label, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: gold,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mmModeButton({
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? gold : Colors.grey.shade800,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.black : Colors.grey.shade400,
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConcentricCirclesPainter extends CustomPainter {
+  final Color accentColor;
+  const _ConcentricCirclesPainter(this.accentColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final maxR = size.width / 2;
+    const rings = 5;
+
+    // Draw outermost to innermost so inner rings paint over outer ones
+    for (int i = rings; i >= 1; i--) {
+      final r = maxR * i / rings;
+      // Alternate: odd rings (1, 3, 5 from inside) filled with accent,
+      // even rings filled with dark — classic target look
+      final filled = i.isOdd;
+      final paint = Paint()
+        ..color = filled ? accentColor : const Color(0xFF1A1A1A)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(cx, cy), r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ConcentricCirclesPainter old) =>
+      old.accentColor != accentColor;
 }
