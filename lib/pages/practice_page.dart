@@ -74,9 +74,49 @@ class _PracticePageState extends State<PracticePage>
   // Tap tempo state
 
   static const List<int> _classicMM = [
-    30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 63, 66, 69, 72,
-    76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 126, 132,
-    138, 144, 152, 160, 168, 176, 184, 192, 200,
+    30,
+    32,
+    34,
+    36,
+    38,
+    40,
+    42,
+    44,
+    46,
+    48,
+    50,
+    52,
+    54,
+    56,
+    58,
+    60,
+    63,
+    66,
+    69,
+    72,
+    76,
+    80,
+    84,
+    88,
+    92,
+    96,
+    100,
+    104,
+    108,
+    112,
+    116,
+    120,
+    126,
+    132,
+    138,
+    144,
+    152,
+    160,
+    168,
+    176,
+    184,
+    192,
+    200,
   ];
 
   Timer? _mmBpmDebounce;
@@ -87,11 +127,15 @@ class _PracticePageState extends State<PracticePage>
         final idx = _classicMM.indexOf(_mm);
         if (idx == -1) {
           if (direction > 0) {
-            _mm = _classicMM.firstWhere((v) => v > _mm,
-                orElse: () => _classicMM.last);
+            _mm = _classicMM.firstWhere(
+              (v) => v > _mm,
+              orElse: () => _classicMM.last,
+            );
           } else {
-            _mm = _classicMM.lastWhere((v) => v < _mm,
-                orElse: () => _classicMM.first);
+            _mm = _classicMM.lastWhere(
+              (v) => v < _mm,
+              orElse: () => _classicMM.first,
+            );
           }
         } else {
           final next = idx + direction;
@@ -112,6 +156,7 @@ class _PracticePageState extends State<PracticePage>
       _metronomeInitialized = false;
       await _metronome.init(
         'assets/audio/claves44_wav.wav',
+        accentedPath: 'assets/audio/claves44_wav.wav',
         bpm: _mm,
         volume: 100,
         timeSignature: 4,
@@ -132,11 +177,15 @@ class _PracticePageState extends State<PracticePage>
           void onDigit(String d) {
             if (input.length < 3) setDialogState(() => input += d);
           }
+
           void onDelete() {
             if (input.isNotEmpty) {
-              setDialogState(() => input = input.substring(0, input.length - 1));
+              setDialogState(
+                () => input = input.substring(0, input.length - 1),
+              );
             }
           }
+
           void onConfirm() {
             final val = int.tryParse(input);
             if (val != null) {
@@ -171,7 +220,9 @@ class _PracticePageState extends State<PracticePage>
 
           return Dialog(
             backgroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -200,16 +251,28 @@ class _PracticePageState extends State<PracticePage>
                     ),
                   ),
                   const SizedBox(height: 12),
-                  AspectRatio(
-                    aspectRatio: 3 / 4,
+                  SizedBox(
+                    height: 320,
                     child: GridView.count(
                       crossAxisCount: 3,
                       physics: const NeverScrollableScrollPhysics(),
                       children: [
-                        ...['7','8','9','4','5','6','1','2','3'].map(
-                          (d) => numKey(d, onTap: () => onDigit(d)),
+                        ...[
+                          '7',
+                          '8',
+                          '9',
+                          '4',
+                          '5',
+                          '6',
+                          '1',
+                          '2',
+                          '3',
+                        ].map((d) => numKey(d, onTap: () => onDigit(d))),
+                        numKey(
+                          '⌫',
+                          onTap: onDelete,
+                          color: Colors.grey.shade600,
                         ),
-                        numKey('⌫', onTap: onDelete, color: Colors.grey.shade600),
                         numKey('0', onTap: () => onDigit('0')),
                         numKey('✓', onTap: onConfirm, color: gold),
                       ],
@@ -644,7 +707,11 @@ class _PracticePageState extends State<PracticePage>
             setState(() {
               isFlagged = newFlaggedState;
               timeline.add(
-                Segment(seconds, isMoving, flagged: newFlaggedState && !isMoving),
+                Segment(
+                  seconds,
+                  isMoving,
+                  flagged: newFlaggedState && !isMoving,
+                ),
               );
             });
 
@@ -1574,10 +1641,7 @@ class _PracticePageState extends State<PracticePage>
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                _mmButton(
-                                  label: '−',
-                                  onTap: () => _mmStep(-1),
-                                ),
+                                _mmButton(label: '−', onTap: () => _mmStep(-1)),
                                 const SizedBox(width: 10),
                                 GestureDetector(
                                   onTap: _showMMNumberPad,
@@ -1591,7 +1655,9 @@ class _PracticePageState extends State<PracticePage>
                                       ),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 4,
+                                    ),
                                     child: Text(
                                       '$_mm',
                                       style: const TextStyle(
@@ -1603,10 +1669,7 @@ class _PracticePageState extends State<PracticePage>
                                   ),
                                 ),
                                 const SizedBox(width: 10),
-                                _mmButton(
-                                  label: '+',
-                                  onTap: () => _mmStep(1),
-                                ),
+                                _mmButton(label: '+', onTap: () => _mmStep(1)),
                                 const SizedBox(width: 16),
                                 _mmModeButton(
                                   label: 'Classic',
@@ -1674,8 +1737,8 @@ class _PracticePageState extends State<PracticePage>
                           ],
                         ),
                       ),
-                      // ── End Metronome ───────────────────────────────────
 
+                      // ── End Metronome ───────────────────────────────────
                       const SizedBox(height: 8),
                     ],
                   ),

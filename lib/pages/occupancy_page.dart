@@ -23,6 +23,7 @@ class _OccupancyPageState extends State<OccupancyPage> {
   ];
 
   StreamSubscription? _weekSubscription;
+  Timer? _stalenessTimer;
   List<Map<String, dynamic>> _liveSessions = [];
   WeekInfo? _week;
   bool _loading = true;
@@ -31,6 +32,21 @@ class _OccupancyPageState extends State<OccupancyPage> {
   void initState() {
     super.initState();
     _init();
+    // Re-filter stale sessions every minute even without a Firestore push
+    _stalenessTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      final now = DateTime.now();
+      final fresh = _liveSessions.where((entry) {
+        final weekData = entry['week'] as Map<String, dynamic>;
+        final heartbeat = weekData['lastHeartbeat'];
+        if (heartbeat == null) return false;
+        final heartbeatTime = (heartbeat as Timestamp).toDate();
+        return now.difference(heartbeatTime).inMinutes < 3;
+      }).toList();
+      if (fresh.length != _liveSessions.length) {
+        setState(() => _liveSessions = fresh);
+      }
+    });
   }
 
   Future<void> _init() async {
@@ -65,7 +81,7 @@ class _OccupancyPageState extends State<OccupancyPage> {
               if (heartbeat == null) return null;
 
               final heartbeatTime = (heartbeat as Timestamp).toDate();
-              if (now.difference(heartbeatTime).inMinutes > 5) return null;
+              if (now.difference(heartbeatTime).inMinutes > 3) return null;
 
               final sessionId = weekData['currentSessionId'];
               if (sessionId == null) return null;
@@ -101,6 +117,7 @@ class _OccupancyPageState extends State<OccupancyPage> {
   @override
   void dispose() {
     _weekSubscription?.cancel();
+    _stalenessTimer?.cancel();
     super.dispose();
   }
 
