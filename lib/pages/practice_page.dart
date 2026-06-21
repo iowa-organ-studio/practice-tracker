@@ -46,7 +46,6 @@ class _PracticePageState extends State<PracticePage>
   int seconds = 0;
   static const pendingStopKey = 'pending_stop_upload';
   DateTime? startTime;
-
   List<Segment> timeline = [];
   bool isMoving = false;
   DateTime? movingStartTime;
@@ -54,92 +53,39 @@ class _PracticePageState extends State<PracticePage>
   DateTime? lastMovementTransitionTime;
   bool isFlagged = false;
   bool initiatedOverlap = false;
-
   String? activeConflictId;
-
   bool conflictAlreadyCreated = false;
-
   bool isSavingSession = false;
-
   bool uploadPending = false;
 
-  // Metronome state
   // Metronome state
   int _mm = 126;
   bool _mmClassicMode = true;
   bool _mmRunning = false;
   final Metronome _metronome = Metronome();
   bool _metronomeInitialized = false;
+  Timer? _mmBpmDebounce;
 
-  // Tap tempo state
+  // Tap tempo
+  final Stopwatch _tapStopwatch = Stopwatch();
+  final List<int> _tapIntervals = [];
 
   static const List<int> _classicMM = [
-    30,
-    32,
-    34,
-    36,
-    38,
-    40,
-    42,
-    44,
-    46,
-    48,
-    50,
-    52,
-    54,
-    56,
-    58,
-    60,
-    63,
-    66,
-    69,
-    72,
-    76,
-    80,
-    84,
-    88,
-    92,
-    96,
-    100,
-    104,
-    108,
-    112,
-    116,
-    120,
-    126,
-    132,
-    138,
-    144,
-    152,
-    160,
-    168,
-    176,
-    184,
-    192,
-    200,
+    30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60,
+    63, 66, 69, 72, 76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116,
+    120, 126, 132, 138, 144, 152, 160, 168, 176, 184, 192, 200,
   ];
-
-  Timer? _mmBpmDebounce;
 
   void _mmStep(int direction) {
     setState(() {
       if (_mmClassicMode) {
         final idx = _classicMM.indexOf(_mm);
         if (idx == -1) {
-          if (direction > 0) {
-            _mm = _classicMM.firstWhere(
-              (v) => v > _mm,
-              orElse: () => _classicMM.last,
-            );
-          } else {
-            _mm = _classicMM.lastWhere(
-              (v) => v < _mm,
-              orElse: () => _classicMM.first,
-            );
-          }
+          _mm = direction > 0
+              ? _classicMM.firstWhere((v) => v > _mm, orElse: () => _classicMM.last)
+              : _classicMM.lastWhere((v) => v < _mm, orElse: () => _classicMM.first);
         } else {
-          final next = idx + direction;
-          _mm = _classicMM[next.clamp(0, _classicMM.length - 1)];
+          _mm = _classicMM[(idx + direction).clamp(0, _classicMM.length - 1)];
         }
       } else {
         _mm = (_mm + direction).clamp(30, 200);
@@ -177,20 +123,14 @@ class _PracticePageState extends State<PracticePage>
           void onDigit(String d) {
             if (input.length < 3) setDialogState(() => input += d);
           }
-
           void onDelete() {
-            if (input.isNotEmpty) {
-              setDialogState(
-                () => input = input.substring(0, input.length - 1),
-              );
-            }
+            if (input.isNotEmpty)
+              setDialogState(() => input = input.substring(0, input.length - 1));
           }
-
           void onConfirm() {
             final val = int.tryParse(input);
             if (val != null) {
-              final clamped = val.clamp(30, 200);
-              setState(() => _mm = clamped);
+              setState(() => _mm = val.clamp(30, 200));
               if (_mmRunning) _debouncedBpmChange();
             }
             Navigator.of(ctx).pop();
@@ -220,65 +160,50 @@ class _PracticePageState extends State<PracticePage>
 
           return Dialog(
             backgroundColor: Colors.black,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Enter MM (30–200)',
-                    style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade900,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      input.isEmpty ? '—' : input,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: SizedBox(
+              width: 260,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Enter MM (30–200)',
+                        style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade900,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        input.isEmpty ? '—' : input,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 320,
-                    child: GridView.count(
-                      crossAxisCount: 3,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        ...[
-                          '7',
-                          '8',
-                          '9',
-                          '4',
-                          '5',
-                          '6',
-                          '1',
-                          '2',
-                          '3',
-                        ].map((d) => numKey(d, onTap: () => onDigit(d))),
-                        numKey(
-                          '⌫',
-                          onTap: onDelete,
-                          color: Colors.grey.shade600,
-                        ),
-                        numKey('0', onTap: () => onDigit('0')),
-                        numKey('✓', onTap: onConfirm, color: gold),
-                      ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 320,
+                      child: GridView.count(
+                        crossAxisCount: 3,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          ...['7','8','9','4','5','6','1','2','3']
+                              .map((d) => numKey(d, onTap: () => onDigit(d))),
+                          numKey('⌫', onTap: onDelete, color: Colors.grey.shade600),
+                          numKey('0', onTap: () => onDigit('0')),
+                          numKey('✓', onTap: onConfirm, color: gold),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -297,17 +222,16 @@ class _PracticePageState extends State<PracticePage>
     if (_mmRunning) {
       _mmStop();
     } else {
-      // Always init fresh with current _mm so we never play a stale BPM
       _metronome.destroy();
       _metronomeInitialized = false;
       await _metronome.init(
         'assets/audio/claves44_wav.wav',
+        accentedPath: 'assets/audio/claves44_wav.wav',
         bpm: _mm,
         volume: 100,
         timeSignature: 4,
         enableTickCallback: false,
       );
-      // Brief pause to let native AudioTrack finish initializing
       await Future.delayed(const Duration(milliseconds: 200));
       _metronomeInitialized = true;
       _metronome.play();
@@ -315,32 +239,22 @@ class _PracticePageState extends State<PracticePage>
     }
   }
 
-  final Stopwatch _tapStopwatch = Stopwatch();
-  final List<int> _tapIntervals = []; // milliseconds between taps
-
   void _onTargetTap() {
     if (!_tapStopwatch.isRunning) {
-      // First tap — just start the clock
       _tapStopwatch.reset();
       _tapStopwatch.start();
       _tapIntervals.clear();
       return;
     }
-
     final elapsed = _tapStopwatch.elapsedMilliseconds;
-
-    // If more than 2.5s since last tap, treat as a fresh start
     if (elapsed > 2500) {
       _tapStopwatch.reset();
       _tapStopwatch.start();
       _tapIntervals.clear();
       return;
     }
-
     _tapIntervals.add(elapsed);
-    _tapStopwatch.reset(); // reset for next interval
-
-    // Use average of last 3 intervals — locks in within 3 taps
+    _tapStopwatch.reset();
     final recent = _tapIntervals.length > 3
         ? _tapIntervals.sublist(_tapIntervals.length - 3)
         : List<int>.from(_tapIntervals);
@@ -351,31 +265,22 @@ class _PracticePageState extends State<PracticePage>
   }
 
   bool isPaused = false;
-
   DateTime? pausedStartTime;
-
   List<WavePoint> waveform = [];
-
   final AudioRecorder recorder = AudioRecorder();
-
   Timer? amplitudeTimer;
-
   double currentAmplitude = 0;
-
   String uid = "";
   String name = "";
   String role = "";
   String? sessionId;
-
   WeekInfo? currentWeek;
 
   String formatClockTime(DateTime t) {
     int h = t.hour % 12;
     if (h == 0) h = 12;
-
     final m = t.minute.toString().padLeft(2, '0');
     final suffix = t.hour >= 12 ? "pm" : "am";
-
     return "$h:$m$suffix";
   }
 
@@ -387,7 +292,6 @@ class _PracticePageState extends State<PracticePage>
 
   Future<void> loadUser() async {
     final prefs = await SharedPreferences.getInstance();
-
     setState(() {
       uid = prefs.getString('uid') ?? "";
       name = prefs.getString('name') ?? "";
@@ -397,275 +301,119 @@ class _PracticePageState extends State<PracticePage>
 
   Future<void> createSession() async {
     currentWeek = await getCurrentWeekInfo();
+    if (currentWeek == null) { debugPrint("No current week found"); return; }
 
-    if (currentWeek == null) {
-      debugPrint("No current week found");
-
-      return;
-    }
-
-    final weekDoc = FirebasePaths.weekDoc(
-      uid: uid,
-      weekId: currentWeek!.weekId,
-    );
-
+    final weekDoc = FirebasePaths.weekDoc(uid: uid, weekId: currentWeek!.weekId);
     final weekSnapshot = await weekDoc.get();
 
     if (!weekSnapshot.exists) {
       await weekDoc.set({
         'semesterId': currentWeek!.semesterId,
-
         'weekId': currentWeek!.weekId,
-
         'weekNumber': currentWeek!.weekNumber,
-
         'totalPracticeSeconds': 0,
-
         'activeSession': true,
-
         'currentOrgan': widget.instrument,
-
         'currentSessionId': null,
-
         'lastHeartbeat': DateTime.now(),
       });
     } else {
       await weekDoc.update({
         'activeSession': true,
-
         'currentOrgan': widget.instrument,
-
         'lastHeartbeat': DateTime.now(),
       });
     }
 
-    final sessionDoc =
-        await FirebasePaths.sessionsCollection(
-          uid: uid,
-          weekId: currentWeek!.weekId,
-        ).add({
-          'uid': uid,
-
-          'name': name,
-
-          'instrument': widget.instrument,
-
-          'startTime': startTime,
-
-          'endTime': null,
-
-          'status': 'normal',
-
-          'timeline': timeline
-              .map(
-                (e) => {
-                  'start': e.start,
-
-                  'moving': e.moving,
-
-                  'flagged': e.flagged,
-
-                  'paused': e.paused,
-
-                  'resolved': e.resolved,
-
-                  'fraudulent': e.fraudulent,
-                },
-              )
-              .toList(),
-        });
+    final sessionDoc = await FirebasePaths.sessionsCollection(
+      uid: uid, weekId: currentWeek!.weekId,
+    ).add({
+      'uid': uid, 'name': name, 'instrument': widget.instrument,
+      'startTime': startTime, 'endTime': null, 'status': 'normal',
+      'timeline': timeline.map((e) => {
+        'start': e.start, 'moving': e.moving, 'flagged': e.flagged,
+        'paused': e.paused, 'resolved': e.resolved, 'fraudulent': e.fraudulent,
+      }).toList(),
+    });
 
     sessionId = sessionDoc.id;
-
     await weekDoc.update({'currentSessionId': sessionId});
   }
 
   Future<void> syncTimeline() async {
-    if (sessionId == null || currentWeek == null) {
-      return;
-    }
-
+    if (sessionId == null || currentWeek == null) return;
     try {
       await FirebasePaths.sessionDoc(
-        uid: uid,
-
-        weekId: currentWeek!.weekId,
-
-        sessionId: sessionId!,
+        uid: uid, weekId: currentWeek!.weekId, sessionId: sessionId!,
       ).update({
-        'timeline': timeline
-            .map(
-              (e) => {
-                'start': e.start,
-
-                'moving': e.moving,
-
-                'flagged': e.flagged,
-
-                'paused': e.paused,
-
-                'resolved': e.resolved,
-
-                'fraudulent': e.fraudulent,
-              },
-            )
-            .toList(),
+        'timeline': timeline.map((e) => {
+          'start': e.start, 'moving': e.moving, 'flagged': e.flagged,
+          'paused': e.paused, 'resolved': e.resolved, 'fraudulent': e.fraudulent,
+        }).toList(),
       });
-    } catch (e) {
-      debugPrint("Timeline sync failed: $e");
-    }
+    } catch (e) { debugPrint("Timeline sync failed: $e"); }
   }
 
   Future<void> createConflict() async {
-    if (conflictAlreadyCreated) {
-      return;
-    }
-
-    if (sessionId == null || currentWeek == null) {
-      return;
-    }
-
+    if (conflictAlreadyCreated || sessionId == null || currentWeek == null) return;
     try {
-      final usersSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .get();
-
+      final usersSnapshot = await FirebaseFirestore.instance.collection('users').get();
       List<DocumentSnapshot<Map<String, dynamic>>> cusps = [];
-
       for (final userDoc in usersSnapshot.docs) {
         final weekDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(userDoc.id)
-            .collection('weeks')
-            .doc(currentWeek!.weekId)
-            .get();
-
-        if (weekDoc.exists) {
-          cusps.add(weekDoc);
-        }
+            .collection('users').doc(userDoc.id)
+            .collection('weeks').doc(currentWeek!.weekId).get();
+        if (weekDoc.exists) cusps.add(weekDoc);
       }
 
       final overlappingCusps = cusps.where((doc) {
         final data = doc.data()!;
-
-        final active = data['activeSession'] == true;
-
-        if (!active) {
-          debugPrint("REJECT active=false");
-          return false;
-        }
-
-        final organ = data['currentOrgan'];
-
-        if (organ != widget.instrument) {
-          return false;
-        }
-
-        final otherSessionId = data['currentSessionId'];
-
-        if (otherSessionId == sessionId) {
-          return false;
-        }
-
+        if (data['activeSession'] != true) return false;
+        if (data['currentOrgan'] != widget.instrument) return false;
+        if (data['currentSessionId'] == sessionId) return false;
         final heartbeat = data['lastHeartbeat'];
-
-        if (heartbeat == null) {
-          return false;
-        }
-
-        final heartbeatTime = (heartbeat as Timestamp).toDate();
-
-        final stale = DateTime.now().difference(heartbeatTime).inMinutes > 3;
-
-        if (stale) {
-          return false;
-        }
-
-        return true;
+        if (heartbeat == null) return false;
+        return DateTime.now().difference((heartbeat as Timestamp).toDate()).inMinutes <= 3;
       }).toList();
 
-      if (overlappingCusps.isEmpty) {
-        return;
-      }
+      if (overlappingCusps.isEmpty) return;
 
-      final sessionRefs = [
-        {'uid': uid, 'weekId': currentWeek!.weekId, 'sessionId': sessionId},
-      ];
-
+      final sessionRefs = [{'uid': uid, 'weekId': currentWeek!.weekId, 'sessionId': sessionId}];
       final uids = [uid];
-
-      final names = [name];
 
       for (final cusp in overlappingCusps) {
         final data = cusp.data()!;
-
         final otherUid = cusp.reference.parent.parent!.id;
-
-        sessionRefs.add({
-          'uid': otherUid,
-
-          'weekId': currentWeek!.weekId,
-
-          'sessionId': data['currentSessionId'],
-        });
-
+        sessionRefs.add({'uid': otherUid, 'weekId': currentWeek!.weekId, 'sessionId': data['currentSessionId']});
         uids.add(otherUid);
       }
 
       final existingConflicts = await FirebasePaths.conflictsCollection()
-          .where('resolved', isEqualTo: false)
-          .get();
-
+          .where('resolved', isEqualTo: false).get();
+      final normalize = (List<Map<String, dynamic>> refs) =>
+          refs.map((e) => "${e['uid']}_${e['sessionId']}").toList()..sort();
       for (final doc in existingConflicts.docs) {
         final data = doc.data();
-
-        final existingRefs = List<Map<String, dynamic>>.from(
-          data['sessionRefs'] ?? [],
-        );
-
-        final normalize = (List<Map<String, dynamic>> refs) =>
-            refs.map((e) => "${e['uid']}_${e['sessionId']}").toList()..sort();
-
-        final existingNorm = normalize(existingRefs);
-
-        final currentNorm = normalize(sessionRefs);
-
-        if (existingNorm.join('_') == currentNorm.join('_')) {
+        if (normalize(List<Map<String, dynamic>>.from(data['sessionRefs'] ?? [])).join('_') ==
+            normalize(sessionRefs).join('_')) {
           activeConflictId = doc.id;
-
           conflictAlreadyCreated = true;
-
           return;
         }
       }
 
       final conflictDoc = await FirebasePaths.conflictsCollection().add({
-        'sessionRefs': sessionRefs,
-
-        'uids': uids,
-
-        'organ': widget.instrument,
-
-        'weekId': currentWeek!.weekId,
-
-        'createdAt': DateTime.now(),
-
-        'resolved': false,
-
-        'winnerSessionId': null,
+        'sessionRefs': sessionRefs, 'uids': uids, 'organ': widget.instrument,
+        'weekId': currentWeek!.weekId, 'createdAt': DateTime.now(),
+        'resolved': false, 'winnerSessionId': null,
       });
-
       activeConflictId = conflictDoc.id;
-
       conflictAlreadyCreated = true;
-    } catch (e) {
-      debugPrint("Conflict creation failed: $e");
-    }
+    } catch (e) { debugPrint("Conflict creation failed: $e"); }
   }
 
   void startOverlapWatcher() {
     if (currentWeek == null) return;
-
     overlapSubscription = FirebaseFirestore.instance
         .collectionGroup('weeks')
         .where('activeSession', isEqualTo: true)
@@ -674,49 +422,24 @@ class _PracticePageState extends State<PracticePage>
         .snapshots()
         .listen((snapshot) async {
           final now = DateTime.now();
-
           bool overlapNow = snapshot.docs.any((doc) {
             final data = doc.data();
-            final currentSession = data['currentSessionId'];
-            if (currentSession == sessionId) return false;
-
+            if (data['currentSessionId'] == sessionId) return false;
             final heartbeat = data['lastHeartbeat'];
             if (heartbeat == null) return false;
-
-            final heartbeatTime = (heartbeat as Timestamp).toDate();
-            final stale =
-                now.difference(heartbeatTime) > const Duration(minutes: 3);
-            if (stale) return false;
-
-            debugPrint(
-              "FOUND OVERLAP me=$uid other=${doc.reference.parent.parent!.id}",
-            );
+            if (now.difference((heartbeat as Timestamp).toDate()) > const Duration(minutes: 3)) return false;
+            debugPrint("FOUND OVERLAP me=$uid other=${doc.reference.parent.parent!.id}");
             return true;
           });
-
-          debugPrint(
-            "OVERLAP CHECK uid=$uid session=$sessionId "
-            "organ=${widget.instrument} overlapNow=$overlapNow",
-          );
-
+          debugPrint("OVERLAP CHECK uid=$uid session=$sessionId organ=${widget.instrument} overlapNow=$overlapNow");
           final newFlaggedState = widget.instrument != 'Other' && overlapNow;
-
           if (newFlaggedState != isFlagged) {
             final previousFlaggedState = isFlagged;
-
             setState(() {
               isFlagged = newFlaggedState;
-              timeline.add(
-                Segment(
-                  seconds,
-                  isMoving,
-                  flagged: newFlaggedState && !isMoving,
-                ),
-              );
+              timeline.add(Segment(seconds, isMoving, flagged: newFlaggedState && !isMoving));
             });
-
             syncTimeline();
-
             if (!previousFlaggedState && newFlaggedState) {
               await createConflict();
               if (!initiatedOverlap) showOverlapDialog();
@@ -727,103 +450,54 @@ class _PracticePageState extends State<PracticePage>
 
   void showOverlapDialog() {
     if (!mounted) return;
-
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text("Organ Conflict"),
-          content: const Text(
-            "Someone else has started a practice session on this organ.\n\nDo you wish to continue practicing?",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-
-                // ✅ stop timers
-                timer.cancel();
-                heartbeatTimer?.cancel();
-                amplitudeTimer?.cancel();
-
-                // ✅ finalize session in Firestore
-                try {
-                  if (sessionId != null) {
-                    await FirebasePaths.sessionDoc(
-                      uid: uid,
-
-                      weekId: currentWeek!.weekId,
-
-                      sessionId: sessionId!,
-                    ).update({
-                      'duration': seconds,
-
-                      'timeline': timeline
-                          .map(
-                            (e) => {
-                              'start': e.start,
-
-                              'moving': e.moving,
-
-                              'flagged': e.flagged,
-
-                              'paused': e.paused,
-
-                              'resolved': e.resolved,
-
-                              'fraudulent': e.fraudulent,
-                            },
-                          )
-                          .toList(),
-
-                      'endTime': DateTime.now(),
-                    });
-                  }
-                } catch (e) {
-                  debugPrint("Error ending session from conflict dialog: $e");
+      builder: (_) => AlertDialog(
+        title: const Text("Organ Conflict"),
+        content: const Text(
+          "Someone else has started a practice session on this organ.\n\nDo you wish to continue practicing?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              timer.cancel();
+              heartbeatTimer?.cancel();
+              amplitudeTimer?.cancel();
+              try {
+                if (sessionId != null) {
+                  await FirebasePaths.sessionDoc(
+                    uid: uid, weekId: currentWeek!.weekId, sessionId: sessionId!,
+                  ).update({
+                    'duration': seconds,
+                    'timeline': timeline.map((e) => {
+                      'start': e.start, 'moving': e.moving, 'flagged': e.flagged,
+                      'paused': e.paused, 'resolved': e.resolved, 'fraudulent': e.fraudulent,
+                    }).toList(),
+                    'endTime': DateTime.now(),
+                  });
                 }
-
-                if (!mounted) return;
-
-                // ✅ go home
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        widget.adminMode ? const AdminPage() : const HomePage(),
-                  ),
-                  (route) => false,
-                );
-              },
-              child: const Text("No"),
-            ),
-
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text("Yes"),
-            ),
-          ],
-        );
-      },
+              } catch (e) { debugPrint("Error ending session from conflict dialog: $e"); }
+              if (!mounted) return;
+              Navigator.pushAndRemoveUntil(context,
+                MaterialPageRoute(builder: (_) => widget.adminMode ? const AdminPage() : const HomePage()),
+                (route) => false);
+            },
+            child: const Text("No"),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Yes")),
+        ],
+      ),
     );
   }
 
   Future<void> sendHeartbeat() async {
-    if (currentWeek == null) {
-      return;
-    }
-
+    if (currentWeek == null) return;
     try {
-      await FirebasePaths.weekDoc(
-        uid: uid,
-        weekId: currentWeek!.weekId,
-      ).update({'lastHeartbeat': DateTime.now()});
-    } catch (e) {
-      debugPrint("Heartbeat update failed: $e");
-    }
+      await FirebasePaths.weekDoc(uid: uid, weekId: currentWeek!.weekId)
+          .update({'lastHeartbeat': DateTime.now()});
+    } catch (e) { debugPrint("Heartbeat update failed: $e"); }
   }
 
   Future<void> initializePractice() async {
@@ -833,33 +507,17 @@ class _PracticePageState extends State<PracticePage>
     startTime = DateTime.now();
     initiatedOverlap = widget.initiatedOverlap;
     timeline = [Segment(0, false, flagged: false)];
-
     await createSession();
     debugPrint("SESSION CREATED");
     if (widget.instrument != 'Other') {
       startOverlapWatcher();
       debugPrint("OVERLAP WATCHER STARTED");
     }
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   String formatDate(DateTime d) {
-    const months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     return "${d.day.toString().padLeft(2, '0')} ${months[d.month - 1]} ${d.year}";
   }
 
@@ -867,11 +525,7 @@ class _PracticePageState extends State<PracticePage>
     final h = s ~/ 3600;
     final m = (s % 3600) ~/ 60;
     final sec = s % 60;
-
-    if (h > 0) {
-      return "$h h $m m $sec s";
-    }
-
+    if (h > 0) return "$h h $m m $sec s";
     return "$m m $sec s";
   }
 
@@ -882,118 +536,59 @@ class _PracticePageState extends State<PracticePage>
   }
 
   Map<String, int> computeTotals() {
-    int practice = 0;
-    int moving = 0;
-    int flagged = 0;
-    int paused = 0;
-
+    int practice = 0, moving = 0, flagged = 0, paused = 0;
     for (int i = 0; i < timeline.length; i++) {
       final current = timeline[i];
-
       int end = (i < timeline.length - 1) ? timeline[i + 1].start : seconds;
-
       int duration = end - current.start;
-
-      if (current.paused) {
-        paused += duration;
-      } else if (current.moving) {
-        moving += duration;
-      } else if (current.flagged) {
-        flagged += duration;
-      } else {
-        practice += duration;
-      }
+      if (current.paused) paused += duration;
+      else if (current.moving) moving += duration;
+      else if (current.flagged) flagged += duration;
+      else practice += duration;
     }
-
-    return {
-      'practice': practice,
-      'moving': moving,
-      'flagged': flagged,
-      'paused': paused,
-    };
+    return {'practice': practice, 'moving': moving, 'flagged': flagged, 'paused': paused};
   }
 
   Future<void> initializeWaveform() async {
     if (widget.instrument != 'Other') return;
-
     try {
       final hasPermission = await recorder.hasPermission();
-
-      if (!hasPermission) {
-        debugPrint("Microphone permission denied");
-        return;
-      }
-
+      if (!hasPermission) { debugPrint("Microphone permission denied"); return; }
       final dir = await getTemporaryDirectory();
-
-      final path = '${dir.path}/temp_recording.m4a';
-
-      await recorder.start(const RecordConfig(), path: path);
-
+      await recorder.start(const RecordConfig(), path: '${dir.path}/temp_recording.m4a');
       amplitudeTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
         try {
           final amp = await recorder.getAmplitude();
-
           if (!mounted) return;
-
-          double normalized = (amp.current + 60) / 60;
-
-          normalized = normalized.clamp(0.0, 1.0);
-
+          double normalized = ((amp.current + 60) / 60).clamp(0.0, 1.0);
           setState(() {
             currentAmplitude = (currentAmplitude * 0.7) + (normalized * 0.3);
-
             waveform.add(WavePoint(seconds, currentAmplitude));
           });
-        } catch (e) {
-          debugPrint("Amplitude read error: $e");
-        }
+        } catch (e) { debugPrint("Amplitude read error: $e"); }
       });
-    } catch (e) {
-      debugPrint("Waveform init error: $e");
-    }
+    } catch (e) { debugPrint("Waveform init error: $e"); }
   }
 
   Future<void> savePendingStopUpload() async {
     final prefs = await SharedPreferences.getInstance();
-
-    final pendingData = {
-      'uid': uid,
-      'weekId': currentWeek!.weekId,
-      'sessionId': sessionId,
-      'duration': seconds,
-      'endTime': DateTime.now().toIso8601String(),
-
-      'timeline': timeline
-          .map(
-            (e) => {
-              'start': e.start,
-              'moving': e.moving,
-              'flagged': e.flagged,
-              'paused': e.paused,
-              'resolved': e.resolved,
-              'fraudulent': e.fraudulent,
-            },
-          )
-          .toList(),
-
-      'waveform': waveform
-          .map((e) => {'second': e.second, 'amplitude': e.amplitude})
-          .toList(),
-    };
-
-    await prefs.setString(pendingStopKey, jsonEncode(pendingData));
+    await prefs.setString(pendingStopKey, jsonEncode({
+      'uid': uid, 'weekId': currentWeek!.weekId, 'sessionId': sessionId,
+      'duration': seconds, 'endTime': DateTime.now().toIso8601String(),
+      'timeline': timeline.map((e) => {
+        'start': e.start, 'moving': e.moving, 'flagged': e.flagged,
+        'paused': e.paused, 'resolved': e.resolved, 'fraudulent': e.fraudulent,
+      }).toList(),
+      'waveform': waveform.map((e) => {'second': e.second, 'amplitude': e.amplitude}).toList(),
+    }));
   }
 
   @override
   void initState() {
     debugPrint("INIT STATE");
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
     WakelockPlus.enable();
-
     initializePractice();
     initializeWaveform();
     heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -1001,74 +596,48 @@ class _PracticePageState extends State<PracticePage>
       syncTimeline();
     });
 
-    // Metronome is initialized fresh on each Start press
+    // Metronome initialized fresh on each Start press
 
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-
-      if (isPaused) {
-        return;
-      }
-
-      setState(() {
-        seconds++;
-      });
+      if (isPaused) return;
+      setState(() { seconds++; });
     });
 
     accelerometerEventStream().listen((event) {
       if (!mounted) return;
-
-      double mag = (event.x * event.x + event.y * event.y + event.z * event.z);
-
+      double mag = event.x * event.x + event.y * event.y + event.z * event.z;
       bool movementDetected = mag > 120;
-
       final now = DateTime.now();
 
       if (movementDetected) {
         movingStartTime ??= now;
-
         stillStartTime = null;
-
         if (!isMoving) {
-          final enoughTimePassed =
-              lastMovementTransitionTime == null ||
-              now.difference(lastMovementTransitionTime!) >
-                  const Duration(seconds: 2);
-
+          final enoughTimePassed = lastMovementTransitionTime == null ||
+              now.difference(lastMovementTransitionTime!) > const Duration(seconds: 2);
           if (enoughTimePassed) {
             setState(() {
               isMoving = true;
-
               lastMovementTransitionTime = now;
-
               timeline.add(Segment(seconds, true, flagged: isFlagged));
             });
-
             syncTimeline();
           }
         }
       } else {
         stillStartTime ??= now;
-
         movingStartTime = null;
-
-        if (isMoving &&
-            now.difference(stillStartTime!) >= const Duration(seconds: 5)) {
+        if (isMoving && now.difference(stillStartTime!) >= const Duration(seconds: 5)) {
           setState(() {
-            final enoughTimePassed =
-                lastMovementTransitionTime == null ||
-                now.difference(lastMovementTransitionTime!) >
-                    const Duration(seconds: 2);
-
+            final enoughTimePassed = lastMovementTransitionTime == null ||
+                now.difference(lastMovementTransitionTime!) > const Duration(seconds: 2);
             if (enoughTimePassed) {
               isMoving = false;
-
               lastMovementTransitionTime = now;
-
               timeline.add(Segment(seconds, false, flagged: isFlagged));
             }
           });
-
           syncTimeline();
         }
       }
@@ -1078,63 +647,38 @@ class _PracticePageState extends State<PracticePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-
     timer.cancel();
     WakelockPlus.disable();
     amplitudeTimer?.cancel();
-
     heartbeatTimer?.cancel();
-
     overlapSubscription?.cancel();
-
     _mmBpmDebounce?.cancel();
     _metronome.destroy();
-
     recorder.stop();
-
     recorder.dispose();
-
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
-
     if (state == AppLifecycleState.paused) {
       pausedStartTime = DateTime.now();
-
-      setState(() {
-        isPaused = true;
-      });
-
+      setState(() { isPaused = true; });
       syncTimeline();
     }
-
     if (state == AppLifecycleState.resumed) {
       if (pausedStartTime != null) {
-        final pausedDuration = DateTime.now()
-            .difference(pausedStartTime!)
-            .inSeconds;
-
+        final pausedDuration = DateTime.now().difference(pausedStartTime!).inSeconds;
         final resumedSecond = seconds + pausedDuration;
-
         setState(() {
           final pauseStartSecond = seconds;
-
           seconds = resumedSecond;
-
           timeline.add(Segment(pauseStartSecond, false, paused: true));
-
-          timeline.add(
-            Segment(resumedSecond, isMoving, flagged: isFlagged && !isMoving),
-          );
-
+          timeline.add(Segment(resumedSecond, isMoving, flagged: isFlagged && !isMoving));
           isPaused = false;
         });
-
         pausedStartTime = null;
-
         syncTimeline();
       }
     }
@@ -1142,56 +686,26 @@ class _PracticePageState extends State<PracticePage>
 
   Future<int> computePracticeSeconds() async {
     int practice = 0;
-
     for (int i = 0; i < timeline.length; i++) {
       final current = timeline[i];
-
       final end = i < timeline.length - 1 ? timeline[i + 1].start : seconds;
-
       final duration = end - current.start;
-
-      final legitimate =
-          !current.moving &&
-          !current.paused &&
-          !current.flagged &&
-          !current.fraudulent;
-
-      final resolvedPractice =
-          current.resolved &&
-          !current.fraudulent &&
-          !current.paused &&
-          !current.moving;
-
-      if (legitimate || resolvedPractice) {
-        practice += duration;
-      }
+      final legitimate = !current.moving && !current.paused && !current.flagged && !current.fraudulent;
+      final resolvedPractice = current.resolved && !current.fraudulent && !current.paused && !current.moving;
+      if (legitimate || resolvedPractice) practice += duration;
     }
-
     return practice;
   }
 
   Future<void> recomputeWeekTotal() async {
-    if (currentWeek == null) {
-      return;
-    }
-
-    final sessions = await FirebasePaths.sessionsCollection(
-      uid: uid,
-      weekId: currentWeek!.weekId,
-    ).get();
-
+    if (currentWeek == null) return;
+    final sessions = await FirebasePaths.sessionsCollection(uid: uid, weekId: currentWeek!.weekId).get();
     int total = 0;
-
     for (final doc in sessions.docs) {
-      final data = doc.data();
-
-      total += (data['practiceSeconds'] as int?) ?? 0;
+      total += (doc.data()['practiceSeconds'] as int?) ?? 0;
     }
-
-    await FirebasePaths.weekDoc(
-      uid: uid,
-      weekId: currentWeek!.weekId,
-    ).update({'totalPracticeSeconds': total});
+    await FirebasePaths.weekDoc(uid: uid, weekId: currentWeek!.weekId)
+        .update({'totalPracticeSeconds': total});
   }
 
   @override
@@ -1203,27 +717,17 @@ class _PracticePageState extends State<PracticePage>
 
     return PopScope(
       canPop: false,
-
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Practice session is active. Press "Stop Practice" to return to app home screen.',
-            ),
-
-            duration: Duration(seconds: 2),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Practice session is active. Press "Stop Practice" to return to app home screen.'),
+          duration: Duration(seconds: 2),
+        ));
       },
-
       child: Scaffold(
         body: SafeArea(
           child: Column(
             children: [
-              // TOP CONTENT
-              // TOP CONTENT
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
@@ -1232,25 +736,13 @@ class _PracticePageState extends State<PracticePage>
                         future: getUserInfo(),
                         builder: (context, snapshot) {
                           if (!snapshot.hasData) return const SizedBox();
-
-                          final user = snapshot.data!;
-
                           return Container(
                             width: double.infinity,
                             color: Colors.black,
                             padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  user['name'] ?? '',
-                                  style: const TextStyle(
-                                    color: gold,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              snapshot.data!['name'] ?? '',
+                              style: const TextStyle(color: gold, fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                           );
                         },
@@ -1264,10 +756,7 @@ class _PracticePageState extends State<PracticePage>
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
                             "${formatDate(startTime!)} --- ${widget.instrument}",
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
@@ -1276,25 +765,12 @@ class _PracticePageState extends State<PracticePage>
 
                       SizedBox(
                         height: 50,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  left: 2,
-                                  right: 2,
-                                ),
-                                child: CustomPaint(
-                                  size: Size.infinite,
-                                  painter: GraphPainter(
-                                    timeline,
-                                    seconds,
-                                    startTime!,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: CustomPaint(
+                            size: Size.infinite,
+                            painter: GraphPainter(timeline, seconds, startTime!),
+                          ),
                         ),
                       ),
 
@@ -1304,60 +780,29 @@ class _PracticePageState extends State<PracticePage>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Container(width: 10, height: 10, color: Colors.green),
-
-                          const SizedBox(width: 4),
-
-                          const Text(
-                            "practice",
-                            style: TextStyle(fontSize: 11),
-                          ),
-
+                          const SizedBox(width: 4), const Text("practice", style: TextStyle(fontSize: 11)),
                           const SizedBox(width: 14),
-
                           Container(width: 10, height: 10, color: gold),
-
-                          const SizedBox(width: 4),
-
-                          const Text("moving", style: TextStyle(fontSize: 11)),
-
+                          const SizedBox(width: 4), const Text("moving", style: TextStyle(fontSize: 11)),
                           const SizedBox(width: 14),
-
                           Container(width: 10, height: 10, color: Colors.red),
-
-                          const SizedBox(width: 4),
-
-                          const Text("flagged", style: TextStyle(fontSize: 11)),
-
+                          const SizedBox(width: 4), const Text("flagged", style: TextStyle(fontSize: 11)),
                           const SizedBox(width: 14),
-
                           Container(width: 10, height: 10, color: Colors.grey),
-
-                          const SizedBox(width: 4),
-
-                          const Text("paused", style: TextStyle(fontSize: 11)),
+                          const SizedBox(width: 4), const Text("paused", style: TextStyle(fontSize: 11)),
                         ],
                       ),
 
                       if (widget.instrument == 'Other') ...[
                         const SizedBox(height: 10),
-
                         SizedBox(
                           height: 50,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 2,
-                                    right: 2,
-                                  ),
-                                  child: CustomPaint(
-                                    size: Size.infinite,
-                                    painter: WaveformPainter(waveform, seconds),
-                                  ),
-                                ),
-                              ),
-                            ],
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: CustomPaint(
+                              size: Size.infinite,
+                              painter: WaveformPainter(waveform, seconds),
+                            ),
                           ),
                         ),
                       ],
@@ -1366,259 +811,104 @@ class _PracticePageState extends State<PracticePage>
 
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-
                         children: [
                           Container(width: 10, height: 10, color: Colors.green),
-
                           const SizedBox(width: 4),
-
-                          Text(
-                            formatHM(computeTotals()['practice']!),
-
-                            style: const TextStyle(fontSize: 14),
-                          ),
-
+                          Text(formatHM(computeTotals()['practice']!), style: const TextStyle(fontSize: 14)),
                           const SizedBox(width: 16),
-
                           Container(width: 10, height: 10, color: gold),
-
                           const SizedBox(width: 4),
-
-                          Text(
-                            formatHM(computeTotals()['moving']!),
-
-                            style: const TextStyle(fontSize: 14),
-                          ),
-
+                          Text(formatHM(computeTotals()['moving']!), style: const TextStyle(fontSize: 14)),
                           const SizedBox(width: 16),
-
                           Container(width: 10, height: 10, color: Colors.red),
-
                           const SizedBox(width: 4),
-
-                          Text(
-                            formatHM(computeTotals()['flagged']!),
-
-                            style: const TextStyle(fontSize: 14),
-                          ),
-
+                          Text(formatHM(computeTotals()['flagged']!), style: const TextStyle(fontSize: 14)),
                           const SizedBox(width: 16),
-
                           Container(width: 10, height: 10, color: Colors.grey),
-
                           const SizedBox(width: 4),
-
-                          Text(
-                            formatHM(computeTotals()['paused']!),
-
-                            style: const TextStyle(fontSize: 14),
-                          ),
+                          Text(formatHM(computeTotals()['paused']!), style: const TextStyle(fontSize: 14)),
                         ],
                       ),
 
                       const SizedBox(height: 10),
-
-                      Text(
-                        formatClock(seconds),
-                        style: const TextStyle(fontSize: 28),
-                      ),
+                      Text(formatClock(seconds), style: const TextStyle(fontSize: 28)),
 
                       if (isSavingSession) ...[
                         const SizedBox(height: 10),
-
-                        const Text(
-                          "Saving session...",
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-
+                        const Text("Saving session...", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
-
-                        const Text(
-                          "Waiting for internet connection...",
-                          style: TextStyle(fontSize: 13, color: Colors.grey),
-                        ),
-
+                        const Text("Waiting for internet connection...", style: TextStyle(fontSize: 13, color: Colors.grey)),
                         const SizedBox(height: 10),
-
                         const CircularProgressIndicator(),
                       ],
 
                       if (uploadPending)
                         const Padding(
                           padding: EdgeInsets.only(top: 10),
-
-                          child: Text(
-                            "STATUS: Upload Pending",
-
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          child: Text("STATUS: Upload Pending",
+                              style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
                         ),
 
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: gold,
-                          foregroundColor: Colors.black,
-                        ),
+                            backgroundColor: gold, foregroundColor: Colors.black),
                         onPressed: () async {
                           timer.cancel();
-
-                          final connectivityResults = await Connectivity()
-                              .checkConnectivity();
-
-                          final offline = connectivityResults.contains(
-                            ConnectivityResult.none,
-                          );
+                          final connectivityResults = await Connectivity().checkConnectivity();
+                          final offline = connectivityResults.contains(ConnectivityResult.none);
 
                           if (offline) {
                             await Future.delayed(const Duration(seconds: 3));
                             await savePendingStopUpload();
-
-                            if (mounted) {
-                              setState(() {
-                                uploadPending = true;
-                              });
-                            }
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                duration: Duration(seconds: 8),
-
-                                content: Text(
-                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
-                                ),
-                              ),
-                            );
-
+                            if (mounted) setState(() { uploadPending = true; });
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              duration: Duration(seconds: 8),
+                              content: Text("No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session."),
+                            ));
                             if (!mounted) return;
-
-                            Navigator.pushAndRemoveUntil(
-                              context,
-
-                              MaterialPageRoute(
-                                builder: (_) => widget.adminMode
-                                    ? const AdminPage()
-                                    : const HomePage(),
-                              ),
-
-                              (route) => false,
-                            );
-
+                            Navigator.pushAndRemoveUntil(context,
+                              MaterialPageRoute(builder: (_) => widget.adminMode ? const AdminPage() : const HomePage()),
+                              (route) => false);
                             return;
                           }
 
-                          setState(() {
-                            isSavingSession = true;
-                          });
+                          setState(() { isSavingSession = true; });
 
                           try {
-                            final practiceSeconds =
-                                await computePracticeSeconds();
-
+                            final practiceSeconds = await computePracticeSeconds();
                             await FirebasePaths.sessionDoc(
-                              uid: uid,
-
-                              weekId: currentWeek!.weekId,
-
-                              sessionId: sessionId!,
+                              uid: uid, weekId: currentWeek!.weekId, sessionId: sessionId!,
                             ).update({
                               'duration': seconds,
-
-                              'timeline': timeline
-                                  .map(
-                                    (e) => {
-                                      'start': e.start,
-
-                                      'moving': e.moving,
-
-                                      'flagged': e.flagged,
-
-                                      'paused': e.paused,
-
-                                      'resolved': e.resolved,
-
-                                      'fraudulent': e.fraudulent,
-                                    },
-                                  )
-                                  .toList(),
-
-                              'waveform': waveform
-                                  .map(
-                                    (e) => {
-                                      'second': e.second,
-
-                                      'amplitude': e.amplitude,
-                                    },
-                                  )
-                                  .toList(),
-
+                              'timeline': timeline.map((e) => {
+                                'start': e.start, 'moving': e.moving, 'flagged': e.flagged,
+                                'paused': e.paused, 'resolved': e.resolved, 'fraudulent': e.fraudulent,
+                              }).toList(),
+                              'waveform': waveform.map((e) => {'second': e.second, 'amplitude': e.amplitude}).toList(),
                               'endTime': DateTime.now(),
-
                               'practiceSeconds': practiceSeconds,
                             });
-
-                            await FirebasePaths.weekDoc(
-                              uid: uid,
-
-                              weekId: currentWeek!.weekId,
-                            ).update({
-                              'activeSession': false,
-
-                              'currentOrgan': null,
-
-                              'currentSessionId': null,
+                            await FirebasePaths.weekDoc(uid: uid, weekId: currentWeek!.weekId).update({
+                              'activeSession': false, 'currentOrgan': null, 'currentSessionId': null,
                             });
-
                             await recomputeWeekTotal();
                           } catch (e) {
                             debugPrint("Error updating session: $e");
-
                             await savePendingStopUpload();
-
                             await FirebasePaths.sessionDoc(
-                              uid: uid,
-
-                              weekId: currentWeek!.weekId,
-
-                              sessionId: sessionId!,
+                              uid: uid, weekId: currentWeek!.weekId, sessionId: sessionId!,
                             ).update({'endedOffline': true});
-
-                            if (mounted) {
-                              setState(() {
-                                uploadPending = true;
-                              });
-                            }
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                duration: Duration(seconds: 8),
-
-                                content: Text(
-                                  "No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session.",
-                                ),
-                              ),
-                            );
+                            if (mounted) setState(() { uploadPending = true; });
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              duration: Duration(seconds: 8),
+                              content: Text("No internet connection available. Practice end time saved locally and will upload when connected to the internet. Do not force close the app or you may lose your session."),
+                            ));
                           }
 
                           if (!mounted) return;
-
-                          Navigator.pushAndRemoveUntil(
-                            context,
-
-                            MaterialPageRoute(
-                              builder: (_) => widget.adminMode
-                                  ? const AdminPage()
-                                  : const HomePage(),
-                            ),
-
-                            (route) => false,
-                          );
+                          Navigator.pushAndRemoveUntil(context,
+                            MaterialPageRoute(builder: (_) => widget.adminMode ? const AdminPage() : const HomePage()),
+                            (route) => false);
                         },
                         child: const Text("Stop Practice"),
                       ),
@@ -1627,17 +917,13 @@ class _PracticePageState extends State<PracticePage>
 
                       // ── Metronome ──────────────────────────────────────
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: Colors.black,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
                           children: [
-                            // Row 1: - | MM | + | Classic | ±1
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -1649,52 +935,31 @@ class _PracticePageState extends State<PracticePage>
                                     width: 58,
                                     alignment: Alignment.center,
                                     decoration: BoxDecoration(
-                                      border: Border.all(
-                                        color: gold.withOpacity(0.4),
-                                        width: 1,
-                                      ),
+                                      border: Border.all(color: gold.withOpacity(0.4), width: 1),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 4,
-                                    ),
-                                    child: Text(
-                                      '$_mm',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    child: Text('$_mm',
+                                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
                                   ),
                                 ),
                                 const SizedBox(width: 10),
                                 _mmButton(label: '+', onTap: () => _mmStep(1)),
                                 const SizedBox(width: 16),
-                                _mmModeButton(
-                                  label: 'Classic',
-                                  active: _mmClassicMode,
-                                  onTap: () =>
-                                      setState(() => _mmClassicMode = true),
-                                ),
+                                _mmModeButton(label: 'Classic', active: _mmClassicMode,
+                                    onTap: () => setState(() => _mmClassicMode = true)),
                                 const SizedBox(width: 8),
-                                _mmModeButton(
-                                  label: '±1',
-                                  active: !_mmClassicMode,
-                                  onTap: () =>
-                                      setState(() => _mmClassicMode = false),
-                                ),
+                                _mmModeButton(label: '±1', active: !_mmClassicMode,
+                                    onTap: () => setState(() => _mmClassicMode = false)),
                               ],
                             ),
 
                             const SizedBox(height: 12),
 
-                            // Row 2: tap target | tap MM display | Start/Stop
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                // Tap target — tap repeatedly to set tempo
                                 GestureDetector(
                                   onTap: _onTargetTap,
                                   child: CustomPaint(
@@ -1702,33 +967,18 @@ class _PracticePageState extends State<PracticePage>
                                     painter: _ConcentricCirclesPainter(gold),
                                   ),
                                 ),
-
                                 const SizedBox(width: 24),
-
-                                // Start / Stop button
                                 GestureDetector(
-                                  onTap: () {
-                                    debugPrint('METRO: button tapped');
-                                    _mmToggle();
-                                  },
+                                  onTap: () => _mmToggle(),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 18,
-                                      vertical: 10,
-                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                     decoration: BoxDecoration(
-                                      color: _mmRunning
-                                          ? Colors.red
-                                          : Colors.green,
+                                      color: _mmRunning ? Colors.red : Colors.green,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       _mmRunning ? 'Stop' : 'Start',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                                     ),
                                   ),
                                 ),
@@ -1737,20 +987,16 @@ class _PracticePageState extends State<PracticePage>
                           ],
                         ),
                       ),
-
                       // ── End Metronome ───────────────────────────────────
+
                       const SizedBox(height: 8),
                     ],
                   ),
                 ),
               ),
-              // LOGO BOTTOM
               Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 10),
-                child: SvgPicture.asset(
-                  'assets/Organ-Studio-LockupStacked-RGB.svg',
-                  height: 70,
-                ),
+                child: SvgPicture.asset('assets/Organ-Studio-LockupStacked-RGB.svg', height: 70),
               ),
             ],
           ),
@@ -1763,30 +1009,15 @@ class _PracticePageState extends State<PracticePage>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: gold,
-          borderRadius: BorderRadius.circular(6),
-        ),
+        width: 36, height: 36,
+        decoration: BoxDecoration(color: gold, borderRadius: BorderRadius.circular(6)),
         alignment: Alignment.center,
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.black,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        child: Text(label, style: const TextStyle(color: Colors.black, fontSize: 20, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget _mmModeButton({
-    required String label,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
+  Widget _mmModeButton({required String label, required bool active, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1795,14 +1026,10 @@ class _PracticePageState extends State<PracticePage>
           color: active ? gold : Colors.grey.shade800,
           borderRadius: BorderRadius.circular(6),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.black : Colors.grey.shade400,
-            fontSize: 13,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        child: Text(label, style: TextStyle(
+          color: active ? Colors.black : Colors.grey.shade400,
+          fontSize: 13, fontWeight: FontWeight.bold,
+        )),
       ),
     );
   }
@@ -1818,21 +1045,15 @@ class _ConcentricCirclesPainter extends CustomPainter {
     final cy = size.height / 2;
     final maxR = size.width / 2;
     const rings = 5;
-
-    // Draw outermost to innermost so inner rings paint over outer ones
     for (int i = rings; i >= 1; i--) {
       final r = maxR * i / rings;
-      // Alternate: odd rings (1, 3, 5 from inside) filled with accent,
-      // even rings filled with dark — classic target look
-      final filled = i.isOdd;
       final paint = Paint()
-        ..color = filled ? accentColor : const Color(0xFF1A1A1A)
+        ..color = i.isOdd ? accentColor : const Color(0xFF1A1A1A)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(Offset(cx, cy), r, paint);
     }
   }
 
   @override
-  bool shouldRepaint(_ConcentricCirclesPainter old) =>
-      old.accentColor != accentColor;
+  bool shouldRepaint(_ConcentricCirclesPainter old) => old.accentColor != accentColor;
 }
