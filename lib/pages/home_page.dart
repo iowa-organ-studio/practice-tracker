@@ -57,20 +57,42 @@ class _HomePageState extends State<HomePage> {
       minimumWeeklyMinutes = minimumMinutes;
     });
 
+    // Freeze any past weeks that are now old enough (see
+    // isWeekFreezeEligible). This is a no-op for weeks already frozen,
+    // and only does real work the first time anyone opens the app after
+    // a week crosses the freeze threshold.
+    await freezeEligibleWeeks(semester);
+
+    final lastFrozenWeekNumber = await getLastFrozenWeekNumber(semester);
+
     List<WeekStatus> loadedStatuses = [];
 
     final now = DateTime.now();
 
     for (final week in semester.weeks) {
-      String? topUid;
+      final isFrozen = week.weekNumber <= lastFrozenWeekNumber;
 
-      if (now.isAfter(week.end)) {
-        topUid = await getTopPracticerUidForWeek(week: week);
+      bool isTopPracticer;
+
+      if (isFrozen) {
+        // Cheap path: just read the flag already written at freeze time.
+        isTopPracticer = await getIsGoldStar(uid: uid, weekId: week.weekId);
+      } else if (now.isAfter(week.end)) {
+        // This is the one still-live week (the most recent past week
+        // that hasn't crossed the freeze threshold yet). Compute it the
+        // old way so the admin still has time to resolve conflicts
+        // before it locks in.
+        final topUid = await getTopPracticerUidForWeek(week: week);
+
+        isTopPracticer = uid == topUid;
+      } else {
+        isTopPracticer = false;
       }
+
       final seconds = await getWeekPracticeTotal(
-  uid: uid,
-  weekId: week.weekId,
-);
+        uid: uid,
+        weekId: week.weekId,
+      );
 
       final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
 
@@ -79,7 +101,7 @@ class _HomePageState extends State<HomePage> {
         practicedSeconds: seconds,
         minimumMinutes: minimumMinutes,
         isCurrentWeek: isCurrentWeek,
-        isTopPracticer: uid == topUid,
+        isTopPracticer: isTopPracticer,
       );
 
       loadedStatuses.add(status);
@@ -474,13 +496,13 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 2),
 
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
-                minimumSize: const Size(260, 50),
+                minimumSize: const Size(88, 32),
               ),
               onPressed: () async {
                 final prefs = await SharedPreferences.getInstance();
@@ -510,7 +532,7 @@ class _HomePageState extends State<HomePage> {
               child: const Text("LOGOUT"),
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 2),
 
             if (uploadPending)
               const Padding(

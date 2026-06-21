@@ -5,6 +5,7 @@ import '../widgets/admin_header.dart';
 
 import 'review_page.dart';
 import '../services/semester_service.dart';
+import '../services/cusp_service.dart';
 import '../theme/app_colors.dart';
 
 class LastWeekOverviewPage extends StatelessWidget {
@@ -78,9 +79,11 @@ class LastWeekOverviewPage extends StatelessWidget {
       week: previousWeek,
     );
 
-    final topUid = await getTopPracticerUidForWeek(week: previousWeek);
+    final lastFrozenWeekNumber = await getLastFrozenWeekNumber(semester);
 
-    final isTopPracticer = uid == topUid;
+    final isTopPracticer = previousWeek.weekNumber <= lastFrozenWeekNumber
+        ? await getIsGoldStar(uid: uid, weekId: previousWeek.weekId)
+        : uid == await getTopPracticerUidForWeek(week: previousWeek);
 
     if (isTopPracticer) {
       return gold;
