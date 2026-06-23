@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'login_page.dart';
 
@@ -72,6 +73,12 @@ void main() async {
   ]);
 
   await Firebase.initializeApp();
+
+  // Ensure every device has a real Firebase Auth session before touching
+  // Firestore. This is required for security rules to check request.auth.
+  if (FirebaseAuth.instance.currentUser == null) {
+    await FirebaseAuth.instance.signInAnonymously();
+  }
 
   final startPage = await getStartPage();
 
