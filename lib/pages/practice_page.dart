@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:metronome/metronome.dart';
+import 'package:audioplayers/audioplayers.dart' as ap;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sensors_plus/sensors_plus.dart';
@@ -62,9 +62,9 @@ class _PracticePageState extends State<PracticePage>
   int _mm = 126;
   bool _mmClassicMode = true;
   bool _mmRunning = false;
-  final Metronome _metronome = Metronome();
-  bool _metronomeInitialized = false;
-  Timer? _mmBpmDebounce;
+  final ap.AudioPlayer _mmPlayer = ap.AudioPlayer();
+  Timer? _mmBeatTimer;
+  DateTime? _mmNextBeat;
 
   // Tap tempo
   final Stopwatch _tapStopwatch = Stopwatch();
@@ -91,26 +91,29 @@ class _PracticePageState extends State<PracticePage>
         _mm = (_mm + direction).clamp(30, 200);
       }
     });
-    if (_mmRunning) _debouncedBpmChange();
+    // Changing tempo just adjusts the schedule — no restart, no gap
+    if (_mmRunning) _mmRescheduleNextBeat();
   }
 
-  void _debouncedBpmChange() {
-    _mmBpmDebounce?.cancel();
-    _mmBpmDebounce = Timer(const Duration(milliseconds: 300), () async {
+  // Drift-compensating scheduler: tracks when each beat *should* fire
+  // and adjusts the next Timer delay to absorb any accumulated error,
+  // rather than letting Timer.periodic drift cumulatively.
+  void _mmRescheduleNextBeat() {
+    if (!_mmRunning) return;
+    final intervalMs = (60000 / _mm).round();
+    _mmNextBeat = DateTime.now().add(Duration(milliseconds: intervalMs));
+  }
+
+  void _mmScheduleBeat() {
+    if (!_mmRunning || _mmNextBeat == null) return;
+    final now = DateTime.now();
+    final delay = _mmNextBeat!.difference(now);
+    _mmBeatTimer = Timer(delay.isNegative ? Duration.zero : delay, () {
       if (!_mmRunning) return;
-      _metronome.destroy();
-      _metronomeInitialized = false;
-      await _metronome.init(
-        'assets/audio/claves44_wav.wav',
-        accentedPath: 'assets/audio/claves44_wav.wav',
-        bpm: _mm,
-        volume: 100,
-        timeSignature: 4,
-        enableTickCallback: false,
-      );
-      await Future.delayed(const Duration(milliseconds: 200));
-      _metronomeInitialized = true;
-      if (_mmRunning) _metronome.play();
+      _mmPlayer.play(ap.AssetSource('audio/claves44_wav.wav'));
+      final intervalMs = (60000 / _mm).round();
+      _mmNextBeat = _mmNextBeat!.add(Duration(milliseconds: intervalMs));
+      _mmScheduleBeat();
     });
   }
 
@@ -131,7 +134,7 @@ class _PracticePageState extends State<PracticePage>
             final val = int.tryParse(input);
             if (val != null) {
               setState(() => _mm = val.clamp(30, 200));
-              if (_mmRunning) _debouncedBpmChange();
+              if (_mmRunning) _mmRescheduleNextBeat();
             }
             Navigator.of(ctx).pop();
           }
@@ -213,29 +216,22 @@ class _PracticePageState extends State<PracticePage>
   }
 
   void _mmStop() {
-    _metronome.destroy();
-    _metronomeInitialized = false;
+    _mmBeatTimer?.cancel();
+    _mmBeatTimer = null;
+    _mmNextBeat = null;
     setState(() => _mmRunning = false);
   }
 
-  Future<void> _mmToggle() async {
+  void _mmToggle() {
     if (_mmRunning) {
       _mmStop();
     } else {
-      _metronome.destroy();
-      _metronomeInitialized = false;
-      await _metronome.init(
-        'assets/audio/claves44_wav.wav',
-        accentedPath: 'assets/audio/claves44_wav.wav',
-        bpm: _mm,
-        volume: 100,
-        timeSignature: 4,
-        enableTickCallback: false,
-      );
-      await Future.delayed(const Duration(milliseconds: 200));
-      _metronomeInitialized = true;
-      _metronome.play();
       setState(() => _mmRunning = true);
+      // Play immediately on start, then schedule subsequent beats
+      _mmPlayer.play(ap.AssetSource('audio/claves44_wav.wav'));
+      final intervalMs = (60000 / _mm).round();
+      _mmNextBeat = DateTime.now().add(Duration(milliseconds: intervalMs));
+      _mmScheduleBeat();
     }
   }
 
@@ -261,7 +257,7 @@ class _PracticePageState extends State<PracticePage>
     final avgMs = recent.reduce((a, b) => a + b) / recent.length;
     final bpm = (60000 / avgMs).round().clamp(30, 200);
     setState(() => _mm = bpm);
-    if (_mmRunning) _debouncedBpmChange();
+    if (_mmRunning) _mmRescheduleNextBeat();
   }
 
   bool isPaused = false;
@@ -652,21 +648,31 @@ class _PracticePageState extends State<PracticePage>
     amplitudeTimer?.cancel();
     heartbeatTimer?.cancel();
     overlapSubscription?.cancel();
-    _mmBpmDebounce?.cancel();
-    _metronome.destroy();
+    _mmBeatTimer?.cancel();
+    _mmPlayer.dispose();
     recorder.stop();
     recorder.dispose();
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
-    if (state == AppLifecycleState.paused) {
-      pausedStartTime = DateTime.now();
-      setState(() { isPaused = true; });
-      syncTimeline();
+ @override
+void didChangeAppLifecycleState(AppLifecycleState state) {
+  if (!mounted) return;
+
+  if (state == AppLifecycleState.inactive ||
+      state == AppLifecycleState.paused) {
+    if (_mmRunning) {
+      _mmStop();
     }
+  }
+
+  if (state == AppLifecycleState.paused) {
+    pausedStartTime = DateTime.now();
+    setState(() {
+      isPaused = true;
+    });
+    syncTimeline();
+  }
     if (state == AppLifecycleState.resumed) {
       if (pausedStartTime != null) {
         final pausedDuration = DateTime.now().difference(pausedStartTime!).inSeconds;
