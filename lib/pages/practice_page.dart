@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart' as ap;
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_gapless_loop/flutter_gapless_loop.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sensors_plus/sensors_plus.dart';
@@ -62,9 +64,9 @@ class _PracticePageState extends State<PracticePage>
   int _mm = 126;
   bool _mmClassicMode = true;
   bool _mmRunning = false;
-  final ap.AudioPlayer _mmPlayer = ap.AudioPlayer();
-  Timer? _mmBeatTimer;
-  DateTime? _mmNextBeat;
+  final MetronomePlayer _metronome = MetronomePlayer();
+  Uint8List? _clickBytes;
+  bool _clickLoaded = false;
 
   // Tap tempo
   final Stopwatch _tapStopwatch = Stopwatch();
@@ -91,30 +93,16 @@ class _PracticePageState extends State<PracticePage>
         _mm = (_mm + direction).clamp(30, 200);
       }
     });
-    // Changing tempo just adjusts the schedule — no restart, no gap
-    if (_mmRunning) _mmRescheduleNextBeat();
+    // setBpm regenerates the looping bar buffer on the native side —
+    // no Dart-side scheduling, so no risk of main-thread jitter.
+    if (_mmRunning) _metronome.setBpm(_mm.toDouble());
   }
 
-  // Drift-compensating scheduler: tracks when each beat *should* fire
-  // and adjusts the next Timer delay to absorb any accumulated error,
-  // rather than letting Timer.periodic drift cumulatively.
-  void _mmRescheduleNextBeat() {
-    if (!_mmRunning) return;
-    final intervalMs = (60000 / _mm).round();
-    _mmNextBeat = DateTime.now().add(Duration(milliseconds: intervalMs));
-  }
-
-  void _mmScheduleBeat() {
-    if (!_mmRunning || _mmNextBeat == null) return;
-    final now = DateTime.now();
-    final delay = _mmNextBeat!.difference(now);
-    _mmBeatTimer = Timer(delay.isNegative ? Duration.zero : delay, () {
-      if (!_mmRunning) return;
-      _mmPlayer.play(ap.AssetSource('audio/claves44_wav.wav'));
-      final intervalMs = (60000 / _mm).round();
-      _mmNextBeat = _mmNextBeat!.add(Duration(milliseconds: intervalMs));
-      _mmScheduleBeat();
-    });
+  Future<void> _ensureClickLoaded() async {
+    if (_clickLoaded) return;
+    final data = await rootBundle.load('assets/audio/claves44_wav.wav');
+    _clickBytes = data.buffer.asUint8List();
+    _clickLoaded = true;
   }
 
   void _showMMNumberPad() {
@@ -134,7 +122,7 @@ class _PracticePageState extends State<PracticePage>
             final val = int.tryParse(input);
             if (val != null) {
               setState(() => _mm = val.clamp(30, 200));
-              if (_mmRunning) _mmRescheduleNextBeat();
+              if (_mmRunning) _metronome.setBpm(_mm.toDouble());
             }
             Navigator.of(ctx).pop();
           }
@@ -216,22 +204,23 @@ class _PracticePageState extends State<PracticePage>
   }
 
   void _mmStop() {
-    _mmBeatTimer?.cancel();
-    _mmBeatTimer = null;
-    _mmNextBeat = null;
+    _metronome.stop();
     setState(() => _mmRunning = false);
   }
 
-  void _mmToggle() {
+  Future<void> _mmToggle() async {
     if (_mmRunning) {
       _mmStop();
     } else {
+      await _ensureClickLoaded();
+      if (_clickBytes == null) return;
+      await _metronome.start(
+        bpm: _mm.toDouble(),
+        beatsPerBar: 4,
+        click: _clickBytes!,
+        accent: _clickBytes!, // same sample on every beat — no accent distinction
+      );
       setState(() => _mmRunning = true);
-      // Play immediately on start, then schedule subsequent beats
-      _mmPlayer.play(ap.AssetSource('audio/claves44_wav.wav'));
-      final intervalMs = (60000 / _mm).round();
-      _mmNextBeat = DateTime.now().add(Duration(milliseconds: intervalMs));
-      _mmScheduleBeat();
     }
   }
 
@@ -257,7 +246,7 @@ class _PracticePageState extends State<PracticePage>
     final avgMs = recent.reduce((a, b) => a + b) / recent.length;
     final bpm = (60000 / avgMs).round().clamp(30, 200);
     setState(() => _mm = bpm);
-    if (_mmRunning) _mmRescheduleNextBeat();
+    if (_mmRunning) _metronome.setBpm(_mm.toDouble());
   }
 
   bool isPaused = false;
@@ -648,8 +637,7 @@ class _PracticePageState extends State<PracticePage>
     amplitudeTimer?.cancel();
     heartbeatTimer?.cancel();
     overlapSubscription?.cancel();
-    _mmBeatTimer?.cancel();
-    _mmPlayer.dispose();
+    _metronome.dispose();
     recorder.stop();
     recorder.dispose();
     super.dispose();
