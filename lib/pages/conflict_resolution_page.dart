@@ -155,8 +155,23 @@ class ConflictResolutionPage extends StatelessWidget {
                         ...uids.map(
                           (u) => Padding(
                             padding: const EdgeInsets.only(left: 8, top: 2),
-
-                            child: Text("• $u"),
+                            child: FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(u)
+                                  .get(),
+                              builder: (context, userSnapshot) {
+                                String name = u;
+                                if (userSnapshot.hasData &&
+                                    userSnapshot.data!.exists) {
+                                  final userData =
+                                      userSnapshot.data!.data()
+                                          as Map<String, dynamic>;
+                                  name = userData['name'] ?? u;
+                                }
+                                return Text("• $name ($u)");
+                              },
+                            ),
                           ),
                         ),
                       ],
