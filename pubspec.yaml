@@ -59,6 +59,8 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "assets/icon/icon_background.png"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
 # The following section is specific to Flutter packages.
 flutter:
 
@@ -68,6 +70,8 @@ flutter:
     - assets/audio/woodblock.wav
     - assets/audio/claves44_wav.wav
     - assets/icon/icon.png
+    - assets/icon/icon_foreground.png
+    - assets/icon/icon_background.png
     - assets/Bach_Seal.svg
     - assets/CLOSE.svg
     - assets/FAR.svg
