@@ -12,6 +12,8 @@
 .swiftpm/
 migrate_working_dir/
 
+organ-practice-tracker-4b16ce7ae358.json
+
 # IntelliJ related
 *.iml
 *.ipr
