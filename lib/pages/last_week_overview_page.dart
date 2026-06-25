@@ -8,8 +8,62 @@ import '../services/semester_service.dart';
 import '../services/cusp_service.dart';
 import '../theme/app_colors.dart';
 
-class LastWeekOverviewPage extends StatelessWidget {
+class LastWeekOverviewPage extends StatefulWidget {
   const LastWeekOverviewPage({super.key});
+
+  @override
+  State<LastWeekOverviewPage> createState() => _LastWeekOverviewPageState();
+}
+
+class _LastWeekOverviewPageState extends State<LastWeekOverviewPage> {
+  int? _previousWeekNumber;
+  bool _loadingTitle = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreviousWeekNumber();
+  }
+
+  /// Mirrors the "which week is this overview actually showing" logic
+  /// used by getLastWeekColor, so the title always matches the data.
+  Future<void> _loadPreviousWeekNumber() async {
+    final semester = await getActiveSemester();
+
+    if (semester == null) {
+      if (mounted) setState(() => _loadingTitle = false);
+      return;
+    }
+
+    final now = DateTime.now();
+    int currentWeekIndex = -1;
+
+    for (int i = 0; i < semester.weeks.length; i++) {
+      final week = semester.weeks[i];
+      if (now.isAfter(week.start) && now.isBefore(week.end)) {
+        currentWeekIndex = i;
+        break;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (currentWeekIndex <= 0) {
+      // Still in week 1 — no previous week to show.
+      setState(() {
+        _previousWeekNumber = null;
+        _loadingTitle = false;
+      });
+      return;
+    }
+
+    final previousWeek = semester.weeks[currentWeekIndex - 1];
+
+    setState(() {
+      _previousWeekNumber = previousWeek.weekNumber;
+      _loadingTitle = false;
+    });
+  }
 
   int yearRank(String year) {
     switch (year) {
@@ -96,6 +150,12 @@ class LastWeekOverviewPage extends StatelessWidget {
     return Colors.red;
   }
 
+  String get _titleText {
+    if (_loadingTitle) return "Loading...";
+    if (_previousWeekNumber == null) return "No Previous Week";
+    return "Week ${_previousWeekNumber.toString().padLeft(2, '0')} Overview";
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,10 +166,10 @@ class LastWeekOverviewPage extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            const Text(
-              "Week 1 Overview",
+            Text(
+              _titleText,
 
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
 
             Expanded(
