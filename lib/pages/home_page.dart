@@ -667,7 +667,8 @@ class _HomePageState extends State<HomePage> {
                     final availableHeight = constraints.maxHeight.isFinite
                         ? constraints.maxHeight
                         : baseHeight;
-                    final scale = availableHeight / baseHeight;
+                    final rawScale = availableHeight / baseHeight;
+                    final scale = rawScale.clamp(1.0, 3.0);
 
                     return Align(
                       alignment: Alignment.bottomCenter,
