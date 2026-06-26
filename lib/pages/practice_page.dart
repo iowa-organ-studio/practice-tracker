@@ -818,9 +818,8 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
         body: SafeArea(
           child: Column(
             children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
+              SingleChildScrollView(
+                child: Column(
                     children: [
                       FutureBuilder<Map<String, String>>(
                         future: getUserInfo(),
@@ -1044,11 +1043,33 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
                       const SizedBox(height: 8),
                     ],
                   ),
-                ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 10),
-                child: SvgPicture.asset('assets/Organ-Studio-LockupStacked-RGB.svg', height: 70),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 10),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      const baseHeight = 70.0; // logo's natural rendered height
+                      final availableHeight = constraints.maxHeight.isFinite
+                          ? constraints.maxHeight
+                          : baseHeight;
+                      final rawScale = availableHeight / baseHeight;
+                      final scale = rawScale.clamp(1.0, 3.0);
+
+                      return Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Transform.scale(
+                          scale: scale,
+                          alignment: Alignment.bottomCenter,
+                          child: SvgPicture.asset(
+                            'assets/Organ-Studio-LockupStacked-RGB.svg',
+                            height: baseHeight,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
             ],
           ),

@@ -27,11 +27,60 @@ class _HomePageState extends State<HomePage> {
   Timer? deviceHeartbeatTimer;
   int minimumWeeklyMinutes = 0;
 
+  // Cache key for the last known semester statuses, so we can show
+  // something immediately on load instead of a blank gap while the
+  // real (and sometimes slow) calculation runs in the background.
+  static const semesterStatusCacheKey = 'cached_semester_statuses';
+  static const semesterTitleCacheKey = 'cached_semester_title';
+
   List<WeekStatus> semesterStatuses = [];
   static const pendingStopKey = 'pending_stop_upload';
   String semesterTitle = "Semester";
   bool vacationMode = false;
   bool uploadPending = false;
+
+  /// Loads any cached statuses from the last successful calculation and
+  /// shows them immediately, before the real (potentially slow) network
+  /// calculation below has a chance to run. If nothing has changed once
+  /// the real calculation finishes, the UI just doesn't visibly update —
+  /// if something DID change, it swaps in seamlessly once ready.
+  Future<void> _loadCachedSemesterStatuses() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final cachedTitle = prefs.getString(semesterTitleCacheKey);
+    final cachedRaw = prefs.getString(semesterStatusCacheKey);
+
+    if (cachedRaw == null) return;
+
+    try {
+      final decoded = (jsonDecode(cachedRaw) as List)
+          .map((s) => WeekStatus.values.firstWhere(
+                (e) => e.name == s,
+                orElse: () => WeekStatus.future,
+              ))
+          .toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        semesterStatuses = decoded;
+        if (cachedTitle != null) semesterTitle = cachedTitle;
+      });
+    } catch (e) {
+      debugPrint("Failed to parse cached semester statuses: $e");
+    }
+  }
+
+  Future<void> _cacheSemesterStatuses(
+    List<WeekStatus> statuses,
+    String title,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(statuses.map((s) => s.name).toList());
+    await prefs.setString(semesterStatusCacheKey, encoded);
+    await prefs.setString(semesterTitleCacheKey, title);
+  }
+
   Future<void> loadSemesterStatuses() async {
     final semester = await getActiveSemester();
 
@@ -43,8 +92,10 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final title = "${semester.name} Practice";
+
     setState(() {
-      semesterTitle = "${semester.name} Practice";
+      semesterTitle = title;
 
       vacationMode = false;
     });
@@ -65,11 +116,15 @@ class _HomePageState extends State<HomePage> {
 
     final lastFrozenWeekNumber = await getLastFrozenWeekNumber(semester);
 
-    List<WeekStatus> loadedStatuses = [];
-
     final now = DateTime.now();
 
-    for (final week in semester.weeks) {
+    // Compute every week's status concurrently rather than one at a
+    // time — only the still-live week actually does a heavy scan, but
+    // running everything in parallel means that scan doesn't block the
+    // simple per-week lookups (which were previously waiting behind it
+    // in the sequential for-loop, even though they have nothing to do
+    // with each other).
+    final loadedStatuses = await Future.wait(semester.weeks.map((week) async {
       final isFrozen = week.weekNumber <= lastFrozenWeekNumber;
 
       bool isTopPracticer;
@@ -96,20 +151,24 @@ class _HomePageState extends State<HomePage> {
 
       final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
 
-      final status = computeWeekStatus(
+      return computeWeekStatus(
         week: week,
         practicedSeconds: seconds,
         minimumMinutes: minimumMinutes,
         isCurrentWeek: isCurrentWeek,
         isTopPracticer: isTopPracticer,
       );
+    }));
 
-      loadedStatuses.add(status);
-    }
+    if (!mounted) return;
 
     setState(() {
       semesterStatuses = loadedStatuses;
     });
+
+    // Save this result so the next app open (or returning home after a
+    // practice session) can show it immediately, without a fresh gap.
+    await _cacheSemesterStatuses(loadedStatuses, title);
   }
 
   Future<int> getThisWeekMinutes() async {
@@ -137,16 +196,18 @@ class _HomePageState extends State<HomePage> {
 
     final now = DateTime.now();
 
-    int totalSemesterMinutes = 0;
+    // Run all week totals concurrently instead of accumulating them one
+    // await at a time — same fix as the gold star scan, applied here
+    // since this loop has the identical sequential-await shape.
+    final pastOrCurrentWeeks =
+        semester.weeks.where((week) => now.isAfter(week.start)).toList();
 
-    for (final week in semester.weeks) {
-      if (now.isAfter(week.start)) {
-        totalSemesterMinutes += await getWeekPracticeTotal(
-          uid: uid,
-          weekId: week.weekId,
-        );
-      }
-    }
+    final weekTotals = await Future.wait(pastOrCurrentWeeks.map(
+      (week) => getWeekPracticeTotal(uid: uid, weekId: week.weekId),
+    ));
+
+    final totalSemesterMinutes =
+        weekTotals.fold<int>(0, (sum, minutes) => sum + minutes);
 
     final today = DateTime(now.year, now.month, now.day);
 
@@ -242,6 +303,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
+    // Show last-known statuses immediately, before kicking off the real
+    // (network-bound) calculation. If nothing changed, the user never
+    // sees a gap at all; if something did change, it updates in place
+    // once loadSemesterStatuses finishes.
+    _loadCachedSemesterStatuses();
+
     loadSemesterStatuses();
     retryPendingUpload();
     deviceHeartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -255,6 +322,7 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -431,7 +499,10 @@ class _HomePageState extends State<HomePage> {
             ),
 
             if (semesterStatuses.isNotEmpty)
-              SemesterCard(title: semesterTitle, statuses: semesterStatuses),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: SemesterCard(title: semesterTitle, statuses: semesterStatuses),
+              ),
 
             if (vacationMode)
               const Padding(
@@ -446,97 +517,84 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-
-              children: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-
-                    foregroundColor: gold,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 64,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: gold,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        child: const Text(
+                          "Start Practice",
+                          textAlign: TextAlign.center,
+                        ),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SelectionPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ),
 
-                  child: const Text("Start Practice"),
+                  const SizedBox(width: 14),
 
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-
-                      MaterialPageRoute(
-                        builder: (context) => const SelectionPage(),
+                  Expanded(
+                    child: SizedBox(
+                      height: 64,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: gold,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        child: const Text(
+                          "Review Sessions",
+                          textAlign: TextAlign.center,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ReviewPage(),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-
-                const SizedBox(width: 18),
-
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: gold,
-
-                    foregroundColor: Colors.black,
+                    ),
                   ),
-
-                  child: const Text("Review Sessions"),
-
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-
-                      MaterialPageRoute(
-                        builder: (context) => const ReviewPage(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 2),
-
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(88, 32),
+                ],
               ),
-              onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-
-                final uid = prefs.getString('uid');
-
-                if (uid != null) {
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid)
-                      .update({
-                        'activeDeviceId': null,
-                        'lastDeviceHeartbeat': null,
-                      });
-                }
-
-                await prefs.clear();
-
-                if (!mounted) return;
-
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginPage()),
-                  (route) => false,
-                );
-              },
-              child: const Text("LOGOUT"),
             ),
 
-            const SizedBox(height: 2),
+            const SizedBox(height: 12),
 
             if (uploadPending)
               const Padding(
-                padding: EdgeInsets.only(bottom: 10),
+                padding: EdgeInsets.symmetric(vertical: 10),
 
                 child: Text(
                   "STATUS: Upload Pending",
@@ -549,16 +607,81 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
-            const HarmonyProgressCard(),
-
-            const SizedBox(height: 10),
-
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: const HarmonyProgressCard(),
+            ),
 
-              child: SvgPicture.asset(
-                'assets/Organ-Studio-LockupStacked-RGB.svg',
-                height: 105,
+            const SizedBox(height: 16),
+
+            Center(
+              child: SizedBox(
+                width: 140,
+                height: 44,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () async {
+                    final prefs = await SharedPreferences.getInstance();
+
+                    final uid = prefs.getString('uid');
+
+                    if (uid != null) {
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(uid)
+                          .update({
+                            'activeDeviceId': null,
+                            'lastDeviceHeartbeat': null,
+                          });
+                    }
+
+                    await prefs.clear();
+
+                    if (!mounted) return;
+
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginPage()),
+                      (route) => false,
+                    );
+                  },
+                  child: const Text("LOGOUT"),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const baseHeight = 80.0; // logo's natural rendered height
+                    final availableHeight = constraints.maxHeight.isFinite
+                        ? constraints.maxHeight
+                        : baseHeight;
+                    final scale = availableHeight / baseHeight;
+
+                    return Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Transform.scale(
+                        scale: scale,
+                        alignment: Alignment.bottomCenter,
+                        child: SvgPicture.asset(
+                          'assets/Organ-Studio-LockupStacked-RGB.svg',
+                          height: baseHeight,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ],

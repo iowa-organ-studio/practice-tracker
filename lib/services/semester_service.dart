@@ -125,30 +125,35 @@ Future<String> getWeekLabelForDate(DateTime date) async {
   return "Outside Semester";
 }
 
+/// Scans every (non-admin) user's practice total for the given week and
+/// returns the uid with the highest total, or null if nobody practiced.
+///
+/// All per-user lookups run concurrently via Future.wait instead of one
+/// at a time in a for-loop — with N students this turns ~N sequential
+/// round-trips into roughly 1 round-trip's worth of wall-clock time,
+/// which is the main thing that was making this slow.
 Future<String?> getTopPracticerUidForWeek({required SemesterWeek week}) async {
   final usersSnapshot = await FirebaseFirestore.instance
       .collection('users')
       .get();
 
-  String? topUid;
+  final studentDocs = usersSnapshot.docs
+      .where((doc) => (doc.data()['role'] ?? '') != 'admin')
+      .toList();
 
+  final results = await Future.wait(studentDocs.map((userDoc) async {
+    final uid = userDoc.id;
+    final minutes = await getWeekPracticeTotal(uid: uid, weekId: week.weekId);
+    return MapEntry(uid, minutes);
+  }));
+
+  String? topUid;
   int topMinutes = -1;
 
-  for (final userDoc in usersSnapshot.docs) {
-    final data = userDoc.data();
-
-    if ((data['role'] ?? '') == 'admin') {
-      continue;
-    }
-
-    final uid = userDoc.id;
-
-    final minutes = await getWeekPracticeTotal(uid: uid, weekId: week.weekId);
-
-    if (minutes > topMinutes && minutes > 0) {
-      topMinutes = minutes;
-
-      topUid = uid;
+  for (final entry in results) {
+    if (entry.value > topMinutes && entry.value > 0) {
+      topMinutes = entry.value;
+      topUid = entry.key;
     }
   }
 

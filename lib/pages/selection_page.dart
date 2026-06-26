@@ -39,6 +39,12 @@ class _SelectionPageState extends State<SelectionPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: FutureBuilder<WeekInfo?>(
         future: getCurrentWeekInfo(),
         builder: (context, weekSnapshot) {
