@@ -149,7 +149,7 @@ class _HarmonyProgressCardState extends State<HarmonyProgressCard> {
                           return locked
                               ? SizedBox(
                                   width: 30,
-                                  height: 44,
+                                  height: 52,
 
                                   child: Column(
                                     children: [
@@ -176,7 +176,7 @@ class _HarmonyProgressCardState extends State<HarmonyProgressCard> {
                               : mastered
                               ? SizedBox(
                                   width: 30,
-                                  height: 44,
+                                  height: 52,
 
                                   child: Column(
                                     children: [
@@ -226,7 +226,7 @@ class _HarmonyProgressCardState extends State<HarmonyProgressCard> {
                           return locked
                               ? SizedBox(
                                   width: 30,
-                                  height: 44,
+                                  height: 52,
 
                                   child: Column(
                                     children: [
@@ -253,7 +253,7 @@ class _HarmonyProgressCardState extends State<HarmonyProgressCard> {
                               : mastered
                               ? SizedBox(
                                   width: 30,
-                                  height: 44,
+                                  height: 52,
 
                                   child: Column(
                                     children: [
@@ -311,7 +311,7 @@ class HarmonyWheel extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: 30,
-      height: 46,
+      height: 52,
 
       child: Column(
         children: [
