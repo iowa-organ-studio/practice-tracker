@@ -178,6 +178,14 @@ Future<void> freezeEligibleWeeks(Semester semester) async {
       .collection('semesters')
       .doc(semester.id);
 
+  // Read the current freeze marker once up front.
+  // This prevents us from rescanning already-frozen weeks on every
+  // HomePage load.
+  final semesterSnapshot = await semesterRef.get();
+
+  var lastFrozenWeekNumber =
+      (semesterSnapshot.data()?['lastFrozenWeekNumber'] as int?) ?? 0;
+
   for (final week in semester.weeks) {
     if (week.offWeek) {
       continue;
@@ -189,8 +197,14 @@ Future<void> freezeEligibleWeeks(Semester semester) async {
       break;
     }
 
-    // Find out who won gold star for this week. This is the one full
-    // user-scan per week, done exactly once, at freeze time.
+    // IMPORTANT: Check whether this week is already frozen BEFORE doing
+    // the expensive user/CUSP scan.
+    if (week.weekNumber <= lastFrozenWeekNumber) {
+      continue;
+    }
+
+    // This is the first time we actually need to determine the winner
+    // for this week.
     final topUid = await getTopPracticerUidForWeek(week: week);
 
     bool didFreezeThisWeek = false;
@@ -200,11 +214,12 @@ Future<void> freezeEligibleWeeks(Semester semester) async {
 
       final data = snapshot.data();
 
-      final lastFrozenWeekNumber =
+      final transactionLastFrozenWeekNumber =
           (data?['lastFrozenWeekNumber'] as int?) ?? 0;
 
-      if (week.weekNumber <= lastFrozenWeekNumber) {
-        // Already frozen by another client. Nothing to do.
+      // Another client may have frozen this week while we were doing the
+      // expensive scan. The transaction remains the final safety check.
+      if (week.weekNumber <= transactionLastFrozenWeekNumber) {
         return;
       }
 
@@ -215,8 +230,18 @@ Future<void> freezeEligibleWeeks(Semester semester) async {
       didFreezeThisWeek = true;
     });
 
-    if (didFreezeThisWeek && topUid != null) {
-      await setIsGoldStar(uid: topUid, weekId: week.weekId, value: true);
+    if (didFreezeThisWeek) {
+      // Keep our local marker current so later iterations do not
+      // unnecessarily reconsider the same week.
+      lastFrozenWeekNumber = week.weekNumber;
+
+      if (topUid != null) {
+        await setIsGoldStar(
+          uid: topUid,
+          weekId: week.weekId,
+          value: true,
+        );
+      }
     }
   }
 }
