@@ -62,3 +62,34 @@ Future<WeekInfo?> getCurrentWeekInfo() async {
 
   return null;
 }
+
+Future<DateTime?> getCurrentSemesterStart() async {
+  final currentWeek = await getCurrentWeekInfo();
+
+  if (currentWeek == null) return null;
+
+  final semesterDoc = await FirebaseFirestore.instance
+      .collection('semesters')
+      .doc(currentWeek.semesterId)
+      .get();
+
+  if (!semesterDoc.exists) return null;
+
+  final data = semesterDoc.data();
+
+  if (data == null) return null;
+
+  final weeks = List<Map<String, dynamic>>.from(
+    data['weeks'] ?? [],
+  );
+
+  if (weeks.isEmpty) return null;
+
+  weeks.sort(
+    (a, b) => (a['weekNumber'] as int).compareTo(
+      b['weekNumber'] as int,
+    ),
+  );
+
+  return (weeks.first['start'] as Timestamp).toDate();
+}
