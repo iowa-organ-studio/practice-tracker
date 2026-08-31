@@ -104,7 +104,9 @@ Future<int> getPracticeMinutesForWeek({
 
   final data = snapshot.data()!;
 
-  return (data['totalPracticeMinutes'] as int?) ?? 0;
+  final seconds = (data['totalPracticeSeconds'] as int?) ?? 0;
+
+  return (seconds / 60).round();
 }
 
 Future<String> getWeekLabelForDate(DateTime date) async {
