@@ -4,46 +4,100 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../data/harmony_competencies.dart';
 import '../models/harmony_wedge.dart';
 
+
 class AdminHarmonyProgressPage extends StatelessWidget {
   const AdminHarmonyProgressPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Harmony Progress")),
-
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('users').snapshots(),
-
+      appBar: AppBar(
+        title: const Text("Harmony Progress"),
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                "Error loading students: ${snapshot.error}",
+              ),
+            );
           }
 
-          final docs = snapshot.data!.docs.where((d) {
-            final data = d.data() as Map<String, dynamic>;
+          if (!snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          // Exclude administrator accounts.
+          final students = snapshot.data!.docs.where((doc) {
+            final data = doc.data();
 
             return (data['role'] ?? 'student') != 'admin';
           }).toList();
 
-          return ListView.builder(
-            itemCount: docs.length,
+          // Sort alphabetically by last name.
+          String sortName(String name) {
+            final parts = name
+                .trim()
+                .toLowerCase()
+                .split(RegExp(r'\s+'));
 
+            if (parts.length < 2) {
+              return name.toLowerCase();
+            }
+
+            final lastName = parts.last;
+            final firstName =
+                parts.sublist(0, parts.length - 1).join(' ');
+
+            return '$lastName, $firstName';
+          }
+
+          students.sort((a, b) {
+            final nameA =
+                (a.data()['name'] ?? a.id).toString();
+            final nameB =
+                (b.data()['name'] ?? b.id).toString();
+
+            return sortName(nameA).compareTo(sortName(nameB));
+          });
+
+          if (students.isEmpty) {
+            return const Center(
+              child: Text("No students found."),
+            );
+          }
+
+          return ListView.builder(
+            itemCount: students.length,
             itemBuilder: (context, index) {
-              final user = docs[index].data() as Map<String, dynamic>;
+              final student = students[index];
+              final data = student.data();
+
+              final name =
+                  (data['name'] ?? student.id).toString();
 
               return ListTile(
-                title: Text(user['name'] ?? ''),
-
+                leading: const Icon(
+                  Icons.person_outline,
+                ),
+                title: Text(name),
+                subtitle: Text(student.id),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                ),
                 onTap: () {
                   Navigator.push(
                     context,
-
                     MaterialPageRoute(
                       builder: (_) => StudentHarmonyEditorPage(
-                        userDocId: docs[index].id,
-
-                        studentName: user['name'] ?? '',
+                        userDocId: student.id,
+                        studentName: name,
                       ),
                     ),
                   );
@@ -56,6 +110,8 @@ class AdminHarmonyProgressPage extends StatelessWidget {
     );
   }
 }
+
+
 
 class StudentHarmonyEditorPage extends StatelessWidget {
   final String userDocId;
