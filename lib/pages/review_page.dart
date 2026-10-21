@@ -8,7 +8,7 @@ import '../services/user_service.dart';
 import '../theme/app_colors.dart';
 import '../services/review_service.dart';
 import '../services/week_service.dart';
-
+import '../widgets/session_goals_dialog.dart';
 
 class ReviewPage extends StatelessWidget {
   final String? overrideUid;
@@ -716,6 +716,43 @@ class ReviewPage extends StatelessWidget {
                                               fontSize: 12,
                                             ),
                                           ),
+
+                                          
+const SizedBox(height: 8),
+
+Center(
+  child: OutlinedButton.icon(
+    icon: const Icon(Icons.checklist),
+    label: const Text("Edit Goals"),
+    onPressed: () async {
+      try {
+        await showSessionGoalsDialog(
+          context: context,
+          studentUid: currentUid,
+          weekId: doc.weekId,
+          sessionId: doc.sessionId,
+        );
+
+        if (!context.mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Goal selection updated."),
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Could not update goals: $e"),
+          ),
+        );
+      }
+    },
+  ),
+),
+
                                         ],
                                       ),
                                     ],

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_gapless_loop/flutter_gapless_loop.dart';
-
+import '../widgets/session_goals_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -946,7 +946,8 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
                           final offline = connectivityResults.contains(ConnectivityResult.none);
 
                           await _saveAndStopSession();
-
+                          if (!mounted) return;
+                          
                           if (offline) {
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                               duration: Duration(seconds: 8),
@@ -959,7 +960,24 @@ void didChangeAppLifecycleState(AppLifecycleState state) {
                             ));
                           }
 
-                          _navigateHome();
+                          if (!widget.adminMode &&
+    !offline &&
+    !uploadPending &&
+    currentWeek != null &&
+    sessionId != null) {
+  try {
+    await showSessionGoalsDialog(
+      context: context,
+      studentUid: uid,
+      weekId: currentWeek!.weekId,
+      sessionId: sessionId!,
+    );
+  } catch (e) {
+    debugPrint("Could not save session goals: $e");
+  }
+}
+
+_navigateHome();
                         },
                         child: const Text("Stop Practice"),
                       ),

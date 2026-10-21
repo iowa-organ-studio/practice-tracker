@@ -7,6 +7,8 @@ import '../services/user_service.dart';
 import '../login_page.dart';
 import 'selection_page.dart';
 import 'review_page.dart';
+import 'my_goals_page.dart';
+import 'practice_overview_page.dart';
 import '../theme/app_colors.dart';
 import '../services/semester_service.dart';
 import '../models/week_status.dart';
@@ -54,10 +56,12 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final decoded = (jsonDecode(cachedRaw) as List)
-          .map((s) => WeekStatus.values.firstWhere(
-                (e) => e.name == s,
-                orElse: () => WeekStatus.future,
-              ))
+          .map(
+            (s) => WeekStatus.values.firstWhere(
+              (e) => e.name == s,
+              orElse: () => WeekStatus.future,
+            ),
+          )
           .toList();
 
       if (!mounted) return;
@@ -124,41 +128,43 @@ class _HomePageState extends State<HomePage> {
     // simple per-week lookups (which were previously waiting behind it
     // in the sequential for-loop, even though they have nothing to do
     // with each other).
-    final loadedStatuses = await Future.wait(semester.weeks.map((week) async {
-      final isFrozen = week.weekNumber <= lastFrozenWeekNumber;
+    final loadedStatuses = await Future.wait(
+      semester.weeks.map((week) async {
+        final isFrozen = week.weekNumber <= lastFrozenWeekNumber;
 
-      bool isTopPracticer;
+        bool isTopPracticer;
 
-      if (isFrozen) {
-        // Cheap path: just read the flag already written at freeze time.
-        isTopPracticer = await getIsGoldStar(uid: uid, weekId: week.weekId);
-      } else if (now.isAfter(week.end)) {
-        // This is the one still-live week (the most recent past week
-        // that hasn't crossed the freeze threshold yet). Compute it the
-        // old way so the admin still has time to resolve conflicts
-        // before it locks in.
-        final topUid = await getTopPracticerUidForWeek(week: week);
+        if (isFrozen) {
+          // Cheap path: just read the flag already written at freeze time.
+          isTopPracticer = await getIsGoldStar(uid: uid, weekId: week.weekId);
+        } else if (now.isAfter(week.end)) {
+          // This is the one still-live week (the most recent past week
+          // that hasn't crossed the freeze threshold yet). Compute it the
+          // old way so the admin still has time to resolve conflicts
+          // before it locks in.
+          final topUid = await getTopPracticerUidForWeek(week: week);
 
-        isTopPracticer = uid == topUid;
-      } else {
-        isTopPracticer = false;
-      }
+          isTopPracticer = uid == topUid;
+        } else {
+          isTopPracticer = false;
+        }
 
-      final seconds = await getWeekPracticeTotal(
-        uid: uid,
-        weekId: week.weekId,
-      );
+        final seconds = await getWeekPracticeTotal(
+          uid: uid,
+          weekId: week.weekId,
+        );
 
-      final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
+        final isCurrentWeek = now.isAfter(week.start) && now.isBefore(week.end);
 
-      return computeWeekStatus(
-        week: week,
-        practicedSeconds: seconds,
-        minimumMinutes: minimumMinutes,
-        isCurrentWeek: isCurrentWeek,
-        isTopPracticer: isTopPracticer,
-      );
-    }));
+        return computeWeekStatus(
+          week: week,
+          practicedSeconds: seconds,
+          minimumMinutes: minimumMinutes,
+          isCurrentWeek: isCurrentWeek,
+          isTopPracticer: isTopPracticer,
+        );
+      }),
+    );
 
     if (!mounted) return;
 
@@ -199,15 +205,20 @@ class _HomePageState extends State<HomePage> {
     // Run all week totals concurrently instead of accumulating them one
     // await at a time — same fix as the gold star scan, applied here
     // since this loop has the identical sequential-await shape.
-    final pastOrCurrentWeeks =
-        semester.weeks.where((week) => now.isAfter(week.start)).toList();
+    final pastOrCurrentWeeks = semester.weeks
+        .where((week) => now.isAfter(week.start))
+        .toList();
 
-    final weekTotals = await Future.wait(pastOrCurrentWeeks.map(
-      (week) => getWeekPracticeTotal(uid: uid, weekId: week.weekId),
-    ));
+    final weekTotals = await Future.wait(
+      pastOrCurrentWeeks.map(
+        (week) => getWeekPracticeTotal(uid: uid, weekId: week.weekId),
+      ),
+    );
 
-    final totalSemesterMinutes =
-        weekTotals.fold<int>(0, (sum, minutes) => sum + minutes);
+    final totalSemesterMinutes = weekTotals.fold<int>(
+      0,
+      (sum, minutes) => sum + minutes,
+    );
 
     final today = DateTime(now.year, now.month, now.day);
 
@@ -501,7 +512,10 @@ class _HomePageState extends State<HomePage> {
             if (semesterStatuses.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                child: SemesterCard(title: semesterTitle, statuses: semesterStatuses),
+                child: SemesterCard(
+                  title: semesterTitle,
+                  statuses: semesterStatuses,
+                ),
               ),
 
             if (vacationMode)
@@ -606,6 +620,111 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+
+ 
+Padding(
+  padding: const EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 8,
+  ),
+  child: Row(
+    children: [
+      Expanded(
+        child: SizedBox(
+          height: 115,
+          child: Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MyGoalsPage(),
+                  ),
+                );
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(10),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.checklist, size: 27),
+                    SizedBox(height: 5),
+                    Text(
+                      "My Goals",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      "View and edit goals",
+                      style: TextStyle(fontSize: 11),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 14),
+      Expanded(
+        child: SizedBox(
+          height: 115,
+          child: Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PracticeOverviewPage(),
+                  ),
+                );
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(10),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.bar_chart, size: 27),
+                    SizedBox(height: 5),
+                    Text(
+                      "Practice Overview",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      "Practice reports",
+                      style: TextStyle(fontSize: 11),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  ),
+),
+
+
 
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
