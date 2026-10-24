@@ -12,6 +12,7 @@ import 'conflict_resolution_page.dart';
 
 import 'admin_harmony_progress_page.dart';
 import 'admin_goals_page.dart';
+import 'admin_weekly_reports_page.dart';
 import 'admin_tools_page.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -288,26 +289,43 @@ class _AdminPageState extends State<AdminPage> {
 
                       const SizedBox(height: 20),
 
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: gold,
+                          minimumSize: const Size(260, 50),
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AdminGoalsPage(),
+                            ),
+                          );
+                        },
+                        child: const Text("Manage Student Goals"),
+                      ),
 
-ElevatedButton(
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.black,
-    foregroundColor: gold,
-    minimumSize: const Size(260, 50),
-  ),
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const AdminGoalsPage(),
-      ),
-    );
-  },
-  child: const Text("Manage Student Goals"),
-),
+                      const SizedBox(height: 20),
 
-const SizedBox(height: 20),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: gold,
+                          minimumSize: const Size(260, 50),
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AdminWeeklyReportsPage(),
+                            ),
+                          );
+                        },
+                        child: const Text('Weekly Lesson Reports'),
+                      ),
 
+                      const SizedBox(height: 20),
 
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
