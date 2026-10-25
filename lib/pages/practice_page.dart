@@ -23,6 +23,7 @@ import 'admin_page.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/week_service.dart';
 import '../services/firebase_paths.dart';
+import '../widgets/figured_bass_browser.dart';
 
 class PracticePage extends StatefulWidget {
   final String instrument;
@@ -66,7 +67,7 @@ class _PracticePageState extends State<PracticePage>
   bool conflictAlreadyCreated = false;
   bool isSavingSession = false;
   bool uploadPending = false;
-
+  String? activeFiguredBassApp;
   // Metronome state
   int _mm = 126;
   bool _mmClassicMode = true;
@@ -588,61 +589,33 @@ class _PracticePageState extends State<PracticePage>
 
   void showOverlapDialog() {
     if (!mounted) return;
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text("Organ Conflict"),
         content: const Text(
-          "Someone else has started a practice session on this organ.\n\nDo you wish to continue practicing?",
+          "Someone else has started a practice session on this organ.\n\n"
+          "Do you wish to continue practicing?",
         ),
         actions: [
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
-              timer.cancel();
-              heartbeatTimer?.cancel();
-              amplitudeTimer?.cancel();
-              try {
-                if (sessionId != null) {
-                  await FirebasePaths.sessionDoc(
-                    uid: uid,
-                    weekId: currentWeek!.weekId,
-                    sessionId: sessionId!,
-                  ).update({
-                    'duration': seconds,
-                    'timeline': timeline
-                        .map(
-                          (e) => {
-                            'start': e.start,
-                            'moving': e.moving,
-                            'flagged': e.flagged,
-                            'paused': e.paused,
-                            'resolved': e.resolved,
-                            'fraudulent': e.fraudulent,
-                          },
-                        )
-                        .toList(),
-                    'endTime': DateTime.now(),
-                  });
-                }
-              } catch (e) {
-                debugPrint("Error ending session from conflict dialog: $e");
-              }
+              Navigator.pop(dialogContext);
+
+              // Use the same save procedure as Stop Practice.
+              // This also clears activeSession in Firestore.
+              await _saveAndStopSession();
+
               if (!mounted) return;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      widget.adminMode ? const AdminPage() : const HomePage(),
-                ),
-                (route) => false,
-              );
+
+              _navigateHome();
             },
             child: const Text("No"),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text("Yes"),
           ),
         ],
@@ -1074,9 +1047,78 @@ class _PracticePageState extends State<PracticePage>
     ).update({'totalPracticeSeconds': total});
   }
 
+  Future<void> showFiguredBassChooser() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'Figured Bass Practice',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              title: const Text('J. S. Bach — Cadences & Sequences'),
+              onTap: () => Navigator.pop(context, 'jsb'),
+            ),
+            ListTile(
+              title: const Text('Boyvin — Figured Bass Exercises'),
+              onTap: () => Navigator.pop(context, 'boyvin'),
+            ),
+            ListTile(
+              title: const Text('C. P. E. Bach — Figured Bass Trainer'),
+              onTap: () => Navigator.pop(context, 'cpe'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || choice == null) return;
+
+    setState(() {
+      activeFiguredBassApp = choice;
+    });
+  }
+
+  Widget buildFiguredBassBrowser() {
+    const apps = {
+      'jsb': (
+        'J. S. Bach',
+        'https://iowa-organ-studio.github.io/JS-Bach-Cadences-Sequences/',
+      ),
+      'boyvin': (
+        'Boyvin',
+        'https://iowa-organ-studio.github.io/boyvin-figured-bass-exercises/',
+      ),
+      'cpe': (
+        'C. P. E. Bach',
+        'https://iowa-organ-studio.github.io/figured-bass-trainer/',
+      ),
+    };
+
+    final app = apps[activeFiguredBassApp]!;
+
+    return FiguredBassBrowser(
+      title: app.$1,
+      url: app.$2,
+      onReturn: () {
+        setState(() {
+          activeFiguredBassApp = null;
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint("PRACTICE BUILD");
+    if (activeFiguredBassApp != null) {
+      return Scaffold(body: SafeArea(child: buildFiguredBassBrowser()));
+    }
     if (startTime == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -1317,6 +1359,18 @@ class _PracticePageState extends State<PracticePage>
                     ),
 
                     const SizedBox(height: 16),
+
+                    const SizedBox(height: 12),
+
+                    ElevatedButton.icon(
+                      onPressed: showFiguredBassChooser,
+                      icon: const Icon(Icons.music_note),
+                      label: const Text('Figured Bass Practice'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: gold,
+                      ),
+                    ),
 
                     // ── Metronome ──────────────────────────────────────
                     Container(
